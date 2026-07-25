@@ -1548,7 +1548,7 @@ midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=19;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=20;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -2025,8 +2025,15 @@ function openMenu(cx,cy,t){
 }
 function createEvent(kind,t){
   t=Math.max(0,snapT(t)); let e;
-  if(kind==='shell') e={id:nextId(),kind,t0:t,t1:t+1.2,shell:curShell,color:curColor,
-    params:{...shellParams[curShell]},custom:copyCustom(curShell==='custom'?customShell:null),x:0.5,y:0.35};
+  if(kind==='shell'){
+    // A custom shell's console sliders are MULTIPLIERS over the builder's own RTP. A freshly
+    // created custom event should reproduce the builder preview exactly, so it starts at
+    // pass-through (1/1/1) rather than inheriting whatever the console multipliers sit at.
+    // Presets keep their tuned per-shell values. (Editing an existing event never runs here.)
+    const params=(curShell==='custom') ? {radius:1,trails:1,persist:1} : {...shellParams[curShell]};
+    e={id:nextId(),kind,t0:t,t1:t+1.2,shell:curShell,color:curColor,
+      params,custom:copyCustom(curShell==='custom'?customShell:null),x:0.5,y:0.35};
+  }
   else if(kind==='ground') e={id:nextId(),kind,t0:t,t1:t+(GROUND_DUR[curGround]||1.5),ground:curGround,
     color:curColor,rtp:{radius:1,trails:0.5,persist:1},x:0.5};
   else if(kind==='text') e={id:nextId(),kind,t0:t,t1:t+5,text:(msgInput.value.trim()||'HAPPY BIRTHDAY')};
