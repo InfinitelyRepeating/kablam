@@ -163,6 +163,11 @@
   .posbody{padding:14px;}
   #posDone{color:#fff;border-color:var(--ember);background:linear-gradient(180deg,#ff6a3a,#d63c14);
     box-shadow:0 0 14px rgba(255,80,40,.4);}
+  #trackToast{position:fixed;left:50%;top:14px;transform:translateX(-50%) translateY(-140%);z-index:37;
+    background:linear-gradient(180deg,#211c18,#161311);border:1px solid #3a322a;border-radius:10px;
+    padding:9px 16px;color:var(--phosphor);font-family:var(--mono);font-size:.72rem;letter-spacing:.02em;
+    box-shadow:0 8px 24px rgba(0,0,0,.5);transition:transform .35s ease;pointer-events:none;white-space:nowrap;}
+  #trackToast.on{transform:translateX(-50%) translateY(0);}
   #scoreOverlay{position:fixed;inset:0;z-index:36;background:rgba(2,2,8,.72);
     display:none;align-items:center;justify-content:center;}
   #scoreOverlay.on{display:flex;}
@@ -418,6 +423,7 @@
   <input id="tlLoad" type="file" class="vfile">
   <div id="tlEdit"></div>
   <div id="posOverlay"><div id="posDlg"></div></div>
+  <div id="trackToast"></div>
   <div id="scoreOverlay"><div id="scoreDlg"></div></div>
   <div id="trackInfo"></div>
 
@@ -1506,20 +1512,29 @@ async function loadTrackManifest(){
   }
 }
 loadTrackManifest();
-trackSel.onchange=async()=>{
-  const v=trackSel.value;
-  const t=trackList[parseInt(v,10)]; if(!t) return;
-  ensureAudio(); if(AC&&AC.state==='suspended') AC.resume();            // resume inside this gesture, before awaiting
+/* Loads a preset track by manifest object, shared by the dropdown AND by opening a show that
+   names a preset track (see resolveShowTrack below). Returns true on success, false on failure —
+   callers that need to fall back to "couldn't load automatically" messaging check the return value. */
+async function loadPresetByUrl(t){
+  ensureAudio(); if(AC&&AC.state==='suspended') AC.resume();            // resume inside this gesture if we have one, before awaiting
   setAudioStatus('…'); setActiveTrack(t);          // metadata is known now — show ⓘ before the fetch
   audioUiEl=trackSel; audLabel.classList.remove('on');   // this dropdown owns the track being loaded
+  trackSel.value=String(trackList.indexOf(t)); trackSel.classList.add('on');
   try{
     const res=await fetch(t.url); if(!res.ok) throw new Error('fetch failed: '+res.status);
     const buf=await res.arrayBuffer();
     if(isMidiBuffer(buf)) await loadMidiBuffer(buf);      // in case a preset entry points at a .mid file
     else await loadAudioBuffer(t.name,buf);
     setActiveTrack(t);                                   // metadata now available behind the ⓘ button
+    return true;
   }catch(err){ console.error('could not load preset track:',t.url,err);
-    setAudioStatus('✗',{clearMs:2600}); trackSel.value=''; trackSel.classList.remove('on'); }   // ⓘ stays so you can reach the source
+    setAudioStatus('✗',{clearMs:2600}); trackSel.value=''; trackSel.classList.remove('on');   // ⓘ stays so you can reach the source
+    return false; }
+}
+trackSel.onchange=async()=>{
+  const v=trackSel.value;
+  const t=trackList[parseInt(v,10)]; if(!t) return;
+  await loadPresetByUrl(t);
 };
 
 audioFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
@@ -1548,7 +1563,7 @@ midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=20;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=21;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -2037,7 +2052,7 @@ function createEvent(kind,t){
   else if(kind==='ground') e={id:nextId(),kind,t0:t,t1:t+(GROUND_DUR[curGround]||1.5),ground:curGround,
     color:curColor,rtp:{radius:1,trails:0.5,persist:1},x:0.5};
   else if(kind==='text') e={id:nextId(),kind,t0:t,t1:t+5,text:(msgInput.value.trim()||'HAPPY BIRTHDAY')};
-  else if(kind==='song') e={id:nextId(),kind,t0:t,t1:t+(audioPlayer.dur||30),name:songName};
+  else if(kind==='song') e={id:nextId(),kind,t0:t,t1:t+(audioPlayer.dur||30),name:songName,trackUrl:(activeTrack&&activeTrack.url)||undefined};
   else return;
   timeline.events.push(e);
   if(e.t1>timeline.duration) timeline.duration=Math.ceil((e.t1+5)/10)*10;
@@ -2320,10 +2335,15 @@ document.getElementById('tlPlus').onclick=()=>{ timeline.duration+=10; tlRefresh
 document.getElementById('tlMinus').onclick=()=>{ timeline.duration=Math.max(20,timeline.duration-10); tlRefresh(); };
 /* ============================================================
    SYNC SCORE — how well does the show match the music?
-   Three independent signals, deliberately measuring different failures:
+   Five independent signals, deliberately measuring different failures:
      1. Accent sync (F1): are bursts ON the hits, and did you cover the big hits?
+        A shell that only LAUNCHES on the beat (but detonates off it) still gets partial
+        credit — 67% of a full on-beat hit — since the launch is its own visible/audible event.
      2. Energy tracking (Pearson r): does firework density follow the music's arc?
      3. Dynamics + climax: does the show swell like the music, and peak where it peaks?
+     4. Variety: does the show actually use the app's palette — both kinds of effect, several
+        shapes/types, varied RTP, varied color and position — rather than one repeated recipe?
+        Measured against how many options EXIST, not just how many the show happens to use.
    ============================================================ */
 function smoothArr(a,halfWin){
   const n=a.length, pre=new Float64Array(n+1);
@@ -2341,6 +2361,19 @@ function pearson(a,b){
   const den=Math.sqrt(da*db);
   return den<1e-9 ? 0 : num/den;
 }
+/* normalized entropy, 0 (all one value) .. 1 (spread evenly across every option that EXISTS).
+   totalPossible is the size of the app's actual palette for that axis (e.g. 8 shell shapes),
+   not just how many distinct values this show happens to contain — using 2 of 8 shell types
+   evenly isn't "perfect" variety, using all 8 is. null = not enough events to judge this axis. */
+function normEntropy(labels,totalPossible){
+  if(!labels || labels.length<2) return null;
+  const counts={}; for(const l of labels) counts[l]=(counts[l]||0)+1;
+  const n=labels.length; let H=0;
+  for(const k in counts){ const p=counts[k]/n; H-=p*Math.log2(p); }
+  const maxH=Math.log2(Math.max(2,totalPossible));
+  return maxH>0 ? Math.min(1,H/maxH) : 0;
+}
+function avgNonNull(arr){ const v=arr.filter(x=>x!=null); return v.length? v.reduce((a,b)=>a+b,0)/v.length : null; }
 function scoreShow(){
   if(!analysis) return {error:'Load a song first — there’s nothing to match against.'};
   const song=songOnTimeline();
@@ -2353,15 +2386,16 @@ function scoreShow(){
 
   /* --- build the show's intensity envelope on the music's own frame grid --- */
   const inten=new Float64Array(N);
-  const bursts=[];
+  const bursts=[], launches=[];                         // parallel arrays: bursts[i]/launches[i] are the same shell
   const decay=Math.round(1.6/fs);
   for(const e of shells){
-    const td=det(e)-t0; if(td<-1 || td>=N*fs) continue;
+    const td=det(e)-t0, tl=e.t0-t0;
+    bursts.push(td); launches.push(tl);                 // always counted for accent-matching below — the accents
+    if(td<-1 || td>=N*fs) continue;                     // list itself is bounded, so a wide/late shell just won't match anything
     const w=(e.params&&e.params.radius)||1;
-    bursts.push(td);
     const i0=Math.floor(td/fs);
     for(let k=0;k<decay;k++){ const i=i0+k; if(i<0) continue; if(i>=N) break;
-      inten[i]+= w*Math.exp(-k*fs/0.6); }              // flash, then fade
+      inten[i]+= w*Math.exp(-k*fs/0.6); }              // flash, then fade — this part still needs a valid array index
   }
   for(const e of grounds){                              // ground effects burn steadily
     const a=Math.max(0,Math.floor((e.t0-t0)/fs)), b=Math.min(N,Math.ceil((e.t1-t0)/fs));
@@ -2374,8 +2408,12 @@ function scoreShow(){
 
   /* --- 1. accent sync: precision + recall against detected onsets ---
      Accents are weighted by how loud the music is there: you shouldn't be scored
-     for "missing" a beat during a quiet passage. Only the hits that matter count. */
+     for "missing" a beat during a quiet passage. Only the hits that matter count.
+     A shell's DETONATION landing on a beat is full credit; its LAUNCH landing on a beat
+     (with the detonation missing) is worth 67% of that — still a visible on-beat event,
+     just not the main one. */
   const TOL=0.20;                                       // a burst within 200ms reads as "on the hit"
+  const LAUNCH_CREDIT=0.67;
   const eAt=t=>analysis.energy[Math.max(0,Math.min(N-1,Math.floor(t/fs)))]||0;
   const accents=(analysis.accents||[]).filter(a=>a.t<N*fs)
     .map(a=>({t:a.t, s:a.s, w:a.s*eAt(a.t)}));          // importance = onset strength x loudness
@@ -2383,10 +2421,30 @@ function scoreShow(){
   const strong=ranked.slice(0, Math.max(6, Math.round(accents.length*0.35)));   // the hits that matter
   const nearest=(t,list)=>list.reduce((best,x)=>{
     const d=Math.abs((x&&x.t!==undefined?x.t:x)-t); return d<best?d:best; }, Infinity);
-  let precision=0;
-  if(bursts.length) precision = bursts.filter(t=>nearest(t,accents)<=TOL).length / bursts.length;
+  let precision=0, launchOnlyCount=0;
+  if(bursts.length){
+    let sum=0;
+    for(let i=0;i<bursts.length;i++){
+      const detHit=nearest(bursts[i],accents)<=TOL;
+      const launchHit=!detHit && nearest(launches[i],accents)<=TOL;
+      if(launchHit) launchOnlyCount++;
+      sum += detHit?1:(launchHit?LAUNCH_CREDIT:0);
+    }
+    precision=sum/bursts.length;
+  }
   let recall=0;
-  if(strong.length) recall = strong.filter(a=>nearest(a.t,bursts)<=TOL).length / strong.length;
+  if(strong.length){
+    let sum=0;
+    for(const a of strong){
+      let best=0;
+      for(let i=0;i<bursts.length;i++){
+        if(Math.abs(bursts[i]-a.t)<=TOL){ best=1; break; }         // detonation hit is the max — stop looking
+        if(Math.abs(launches[i]-a.t)<=TOL) best=Math.max(best,LAUNCH_CREDIT);
+      }
+      sum+=best;
+    }
+    recall=sum/strong.length;
+  }
   const f1 = (precision+recall)>0 ? 2*precision*recall/(precision+recall) : 0;
 
   /* --- 2. energy tracking --- */
@@ -2410,7 +2468,43 @@ function scoreShow(){
   const climaxGap=Math.abs(peakTime(showEnv)-peakTime(musEnv));
   const climax=Math.max(0,1-climaxGap/12);              // within 12s of the music's peak
 
-  const total=Math.round(100*(0.40*f1 + 0.35*track + 0.15*dynamics + 0.10*climax));
+  /* --- 4. variety: rewards actually using the app's palette, not one repeated recipe ---
+     Four axes, each normalized entropy against how many options EXIST for that axis.
+     A sub-metric is excluded (not zeroed) when there's too little of that category to judge —
+     a shell-only show isn't penalized twice for having no ground-effect variety to speak of. */
+  const pyro=[...shells,...grounds];
+  let axisKind=null, shellTypeEnt=null, groundTypeEnt=null, axisType=null,
+      axisRTP=null, colorEnt=null, posEnt=null, axisColorPos=null, variety=0;
+  if(pyro.length>=2){
+    const NBINS=5, RAD_MIN=0.5,RAD_MAX=1.8, TR_MIN=0,TR_MAX=1, PE_MIN=0.6,PE_MAX=2;
+    const bin=(v,mn,mx)=>Math.floor(Math.max(0,Math.min(0.999999,((v??mn)-mn)/(mx-mn)))*NBINS);
+
+    axisKind=normEntropy(pyro.map(e=>e.kind), 2);                          // shells vs grounds
+
+    shellTypeEnt = shells.length>=2 ? normEntropy(shells.map(e=>e.shell), 8) : null;   // 8 shapes incl. custom
+    groundTypeEnt = grounds.length>=2 ? normEntropy(grounds.map(e=>e.ground), 5) : null; // 5 ground types
+    axisType = avgNonNull([shellTypeEnt, groundTypeEnt]);
+
+    const radii=[], trailsArr=[], persists=[];                             // pooled: shells' params + grounds' rtp
+    for(const e of shells){ const p=e.params||{};
+      radii.push(bin(p.radius,RAD_MIN,RAD_MAX)); trailsArr.push(bin(p.trails,TR_MIN,TR_MAX)); persists.push(bin(p.persist,PE_MIN,PE_MAX)); }
+    for(const e of grounds){ const p=e.rtp||{};
+      radii.push(bin(p.radius,RAD_MIN,RAD_MAX)); trailsArr.push(bin(p.trails,TR_MIN,TR_MAX)); persists.push(bin(p.persist,PE_MIN,PE_MAX)); }
+    axisRTP = avgNonNull([normEntropy(radii,NBINS), normEntropy(trailsArr,NBINS), normEntropy(persists,NBINS)]);
+
+    const colors=pyro.map(e=>e.color).filter(Boolean);
+    colorEnt = colors.length>=2 ? normEntropy(colors,7) : null;             // 7 swatches incl. multi
+    const shellX=shells.map(e=>bin(e.x,0,1)), shellY=shells.map(e=>bin(e.y,0,1));
+    const groundX=grounds.map(e=>bin(e.x,0,1));                            // grounds only vary in x (anchored to the waterline)
+    const shellPosEnt = shells.length>=2 ? avgNonNull([normEntropy(shellX,NBINS), normEntropy(shellY,NBINS)]) : null;
+    const groundPosEnt = grounds.length>=2 ? normEntropy(groundX,NBINS) : null;
+    posEnt = avgNonNull([shellPosEnt, groundPosEnt]);
+    axisColorPos = avgNonNull([colorEnt, posEnt]);
+
+    variety = avgNonNull([axisKind, axisType, axisRTP, axisColorPos]) ?? 0;
+  }
+
+  const total=Math.round(100*(0.24*f1 + 0.21*track + 0.09*dynamics + 0.06*climax + 0.40*variety));
 
   /* --- actionable notes --- */
   const tips=[];
@@ -2419,17 +2513,30 @@ function scoreShow(){
     tips.push(`Big hits with no firework: ${missed.map(a=>fmtClock(a.t+t0)).join(', ')}`);
   if(precision<0.5 && bursts.length)
     tips.push(`${Math.round((1-precision)*100)}% of your bursts don't land on a beat — nudge them, or turn Snap off and fine-tune.`);
+  if(launchOnlyCount>0 && bursts.length)
+    tips.push(`${launchOnlyCount} shell${launchOnlyCount>1?'s':''} launch${launchOnlyCount>1?'':'es'} on the beat but detonate${launchOnlyCount>1?'':'s'} off it — nudge the burst time itself, not just the launch, to get full credit.`);
   if(track<0.25)
     tips.push('Your firework density barely follows the music — try thinning the quiet parts and crowding the loud ones.');
   if(cvShow<cvMus*0.5)
     tips.push('The show is too even. The music has peaks and valleys; the fireworks should too.');
   if(climax<0.5)
     tips.push(`Your busiest moment is ${climaxGap.toFixed(0)}s away from the music's peak at ${fmtClock(peakTime(musEnv)+t0)}.`);
-  if(!tips.length) tips.push('Nicely matched — bursts land on the hits and the density follows the music.');
+  if(axisKind!=null && axisKind<0.4){
+    if(!grounds.length) tips.push('The whole show is aerial shells — mix in some ground effects (fountains, wheels) for contrast.');
+    else if(!shells.length) tips.push('The whole show is ground effects — add some aerial shells for contrast.');
+    else tips.push('Balance shells and ground effects more evenly for a richer show.');
+  }
+  if(shellTypeEnt!=null && shellTypeEnt<0.4) tips.push('Most shells are the same shape — try mixing in a few different types.');
+  if(groundTypeEnt!=null && groundTypeEnt<0.4) tips.push('Most ground effects are the same type — try mixing in a few different ones.');
+  if(axisRTP!=null && axisRTP<0.4) tips.push('Radius/trails/persist barely change across the show — vary them for more visual range.');
+  if(colorEnt!=null && colorEnt<0.4) tips.push('Almost everything is the same color — spread your palette out.');
+  if(posEnt!=null && posEnt<0.4) tips.push('Your fireworks cluster in the same spot — spread them across the frame.');
+  if(!tips.length) tips.push('Nicely matched — bursts land on the hits, the density follows the music, and the show uses real variety.');
 
   const verdict = total>=80?'Tightly synced' : total>=65?'Good match' : total>=45?'Loosely synced' : 'Out of step';
-  return {total,verdict,f1,precision,recall,track,dynamics,climax,
-          nBursts:bursts.length,nAccents:accents.length,tips};
+  return {total,verdict,f1,precision,recall,track,dynamics,climax,variety,
+          axisKind,axisType,axisRTP,axisColorPos,
+          nBursts:bursts.length,nAccents:accents.length,launchOnlyCount,tips};
 }
 /* ---- sync score UI ---- */
 const scoreOverlay=document.getElementById('scoreOverlay'), scoreDlg=document.getElementById('scoreDlg');
@@ -2458,6 +2565,7 @@ document.getElementById('tlScore').onclick=()=>{
     meter('Energy tracking',s.track,'density vs. the music');
     meter('Dynamics',s.dynamics,'peaks and valleys');
     meter('Climax',s.climax,'busiest moment');
+    meter('Variety',s.variety,'kinds, types, RTP, color & position');
     const tips=document.createElement('div'); tips.className='stips';
     const c=document.createElement('div'); c.className='smlabel';
     const c1=document.createElement('span'); c1.textContent=s.nBursts+' bursts';
@@ -2474,6 +2582,40 @@ document.getElementById('tlScore').onclick=()=>{
   scoreOverlay.classList.add('on');
 };
 scoreOverlay.onpointerdown=ev=>{ if(ev.target===scoreOverlay) scoreOverlay.classList.remove('on'); };
+
+/* ---- matching a loaded show to its music ----
+   A show's song event carries trackUrl when it was authored against a bundled preset (absent
+   for a user's own file — there's nothing we could auto-fetch for that case anyway). On Load
+   show: a resolvable preset loads itself, quietly, with a toast confirming what happened; a
+   custom or no-longer-available track gets a dialog naming it, since there's a real action
+   (go find that file) the person needs to take, and nothing will play until they do. */
+const trackToastEl=document.getElementById('trackToast');
+function showTrackToast(msg){ trackToastEl.textContent=msg; trackToastEl.classList.add('on');
+  clearTimeout(trackToastEl._t); trackToastEl._t=setTimeout(()=>trackToastEl.classList.remove('on'),3200); }
+function showTrackNeededDialog(displayName){
+  scoreDlg.innerHTML='';
+  const h=document.createElement('div'); h.className='bhead'; h.textContent='🎵 MUSIC NEEDED';
+  const body=document.createElement('div'); body.className='sbody';
+  const p=document.createElement('div'); p.className='stip';
+  p.textContent=`This show was made for a track called "${displayName}". Load that file, then reopen this show to hear it synced correctly.`;
+  body.appendChild(p);
+  const foot=document.createElement('div'); foot.className='bfoot';
+  const loadBtn=document.createElement('button'); loadBtn.className='btn'; loadBtn.textContent='Load a track…';
+  loadBtn.onclick=()=>{ scoreOverlay.classList.remove('on'); audioFile.click(); };   // a real click, so the picker is allowed to open
+  const close=document.createElement('button'); close.className='btn'; close.textContent='Close';
+  close.onclick=()=>scoreOverlay.classList.remove('on');
+  foot.append(loadBtn,close); scoreDlg.append(h,body,foot);
+  scoreOverlay.classList.add('on');
+}
+async function resolveShowTrack(events){
+  const song=events.find(e=>e.kind==='song'); if(!song) return;    // no song event — nothing to resolve
+  if(song.trackUrl){
+    const t=trackList.find(x=>x.url===song.trackUrl);
+    if(t){ if(await loadPresetByUrl(t)){ showTrackToast('🎵 Loaded backing track: '+t.display); return; } }
+    // named a preset but we couldn't find or fetch it (removed, renamed, offline) — fall through
+  }
+  showTrackNeededDialog(song.name||'this track');
+}
 
 const tlFileMenu=document.getElementById('tlFileMenu'), tlFileBtn=document.getElementById('tlFile');
 const tlLoadInput=document.getElementById('tlLoad');
@@ -2514,6 +2656,7 @@ tlLoadInput.onchange=ev=>{ const f=ev.target.files[0]; if(!f) return;
       tlSnapBtn.classList.toggle('on',timeline.snap);
       tlSnapBtn.textContent=timeline.snap?'¼s':'free';
       closeEditor(); tlOpen();
+      resolveShowTrack(timeline.events);                      // find/prompt for the right music, non-blocking
     }catch(err){ console.error('Could not read that show file:',err); }
     ev.target.value=''; };                                  // allow reloading the same file
   rd.readAsText(f); };
@@ -2525,7 +2668,7 @@ function autoSongEvent(){
   timeline.events=timeline.events.filter(e=>e.kind!=='song');
   const d=audioPlayer.dur;
   timeline.duration=Math.max(60,Math.ceil(d+20));            // 10s padding on each side
-  timeline.events.push({id:nextId(),kind:'song',t0:10,t1:10+d,name:songName});
+  timeline.events.push({id:nextId(),kind:'song',t0:10,t1:10+d,name:songName,trackUrl:(activeTrack&&activeTrack.url)||undefined});
   timeline.zoom=Math.max(3,(window.innerWidth-40)/timeline.duration);   // fit the whole show on screen
   tlOpen();
 }
