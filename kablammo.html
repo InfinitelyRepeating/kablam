@@ -169,6 +169,14 @@
     padding:9px 16px;color:var(--phosphor);font-family:var(--mono);font-size:.72rem;letter-spacing:.02em;
     box-shadow:0 8px 24px rgba(0,0,0,.5);transition:transform .35s ease;pointer-events:none;white-space:nowrap;}
   #trackToast.on{transform:translateX(-50%) translateY(0);}
+  #updateBanner{position:fixed;left:50%;bottom:16px;transform:translateX(-50%) translateY(160%);z-index:38;
+    display:flex;align-items:center;gap:12px;background:linear-gradient(180deg,#211c18,#161311);
+    border:1px solid #3a322a;border-radius:10px;padding:10px 14px;color:var(--phosphor);
+    font-family:var(--mono);font-size:.72rem;letter-spacing:.02em;box-shadow:0 8px 24px rgba(0,0,0,.55);
+    transition:transform .35s ease;white-space:nowrap;}
+  #updateBanner.on{transform:translateX(-50%) translateY(0);}
+  #updateBanner .btn{padding:6px 10px;font-size:.6rem;}
+  #updateReloadBtn{color:#7dffc4;border-color:#4fd39a;}
   #scoreOverlay{position:fixed;inset:0;z-index:36;background:rgba(2,2,8,.72);
     display:none;align-items:center;justify-content:center;}
   #scoreOverlay.on{display:flex;}
@@ -426,6 +434,11 @@
   <div id="tlEdit"></div>
   <div id="posOverlay"><div id="posDlg"></div></div>
   <div id="trackToast"></div>
+  <div id="updateBanner">
+    <span>A new version of Kablammo is ready.</span>
+    <button class="btn" id="updateReloadBtn">Reload</button>
+    <button class="btn" id="updateLaterBtn">Later</button>
+  </div>
   <div id="scoreOverlay"><div id="scoreDlg"></div></div>
   <div id="trackInfo"></div>
 
@@ -1565,7 +1578,7 @@ midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=24;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=26;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -2726,6 +2739,7 @@ tlFileBtn.onclick=()=>{
     d.dataset.armed='1'; d.textContent='🗑   Clear — tap again';
   };
   tlFileMenu.appendChild(d);
+  add('ℹ️   About Kablammo…', ()=>window.open('https://github.com/InfinitelyRepeating/kablammo','_blank','noopener'), false);
   const r=tlFileBtn.getBoundingClientRect();
   tlFileMenu.classList.add('on');
   const mw=tlFileMenu.offsetWidth||210, mh=tlFileMenu.offsetHeight||140;
@@ -2841,6 +2855,18 @@ refreshManifest();
 if('serviceWorker' in navigator && location.protocol!=='blob:' && location.protocol!=='file:'){
   navigator.serviceWorker.register('./sw.js',{scope:'./'})
     .catch(e=>console.info('offline mode unavailable (sw.js not reachable):',e));
+
+  /* "new version ready" banner. controllerchange fires both the FIRST time a service worker ever
+     claims this page (nothing to update from — stay quiet) and every time a genuinely new version
+     takes over later (the case worth telling the user about) — hadController tells them apart. */
+  let hadController=!!navigator.serviceWorker.controller;
+  const updateBanner=document.getElementById('updateBanner');
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{
+    if(hadController) updateBanner.classList.add('on');
+    hadController=true;
+  });
+  document.getElementById('updateReloadBtn').onclick=()=>location.reload();
+  document.getElementById('updateLaterBtn').onclick=()=>updateBanner.classList.remove('on');
 }
 
 let deferredPrompt=null;
