@@ -1563,7 +1563,7 @@ midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=21;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=22;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -2336,14 +2336,26 @@ document.getElementById('tlMinus').onclick=()=>{ timeline.duration=Math.max(20,t
 /* ============================================================
    SYNC SCORE — how well does the show match the music?
    Five independent signals, deliberately measuring different failures:
-     1. Accent sync (F1): are bursts ON the hits, and did you cover the big hits?
+     1. Accent sync (F1): are bursts ON the hits, and did you cover the big hits? Landing near a
+        beat tapers smoothly to zero rather than a hard yes/no cliff, and each burst can only claim
+        credit for ONE nearby beat (and vice versa) — so a cluster of closely-packed beats can't let
+        one lucky placement rack up credit for several of them at once.
         A shell that only LAUNCHES on the beat (but detonates off it) still gets partial
         credit — 67% of a full on-beat hit — since the launch is its own visible/audible event.
      2. Energy tracking (Pearson r): does firework density follow the music's arc?
-     3. Dynamics + climax: does the show swell like the music, and peak where it peaks?
+     3. Dynamics + climax: does the show swell like the music, and peak where it peaks? Climax
+        allows a generous window, since a real musical climax can be a broad, sustained passage
+        rather than one exact instant.
      4. Variety: does the show actually use the app's palette — both kinds of effect, several
         shapes/types, varied RTP, varied color and position — rather than one repeated recipe?
         Measured against how many options EXIST, not just how many the show happens to use.
+        Position variety only counts spread within a sensible on-screen area; landing off-screen
+        or at ground level costs credit instead of counting as "spread out."
+   Each raw score is curved (gently boosting a genuine but imperfect effort) before being combined.
+   The total isn't a flat weighted average — it's the best-scoring SUBSET of these five dimensions,
+   capped by how much of the show's total importance that subset represents. A modest effort that's
+   excellent in two or three areas can still land a respectable score without needing to be great at
+   everything at once; a score in the 90s does require covering nearly all of it well.
    ============================================================ */
 function smoothArr(a,halfWin){
   const n=a.length, pre=new Float64Array(n+1);
@@ -2374,6 +2386,27 @@ function normEntropy(labels,totalPossible){
   return maxH>0 ? Math.min(1,H/maxH) : 0;
 }
 function avgNonNull(arr){ const v=arr.filter(x=>x!=null); return v.length? v.reduce((a,b)=>a+b,0)/v.length : null; }
+/* graded proximity: full credit up to FULL, tapers linearly to 0 by FULL+FADE — replaces a hard
+   cliff where landing at 0.19s counts fully and 0.21s counts for nothing. */
+function proximity(d,FULL,FADE){ if(d<=FULL) return 1; if(d>=FULL+FADE) return 0; return 1-(d-FULL)/FADE; }
+/* the shared gentle curve applied to every raw dimension score before combining them */
+function curve(x,p){ return Math.pow(Math.max(0,Math.min(1,x)),p); }
+/* total = best-scoring SUBSET of the five curved dimensions, capped by how much of the show's
+   total importance that subset covers (by WEIGHT, not raw count — a low-weight dimension scoring
+   badly shouldn't be a free include just because its own weight limits the damage). With 5
+   dimensions there are only 31 non-empty subsets — brute force is instant. */
+function tieredTotal(curvedScores,weights,capOfCoverage){
+  const dims=Object.keys(curvedScores), n=dims.length;
+  let best=-Infinity, bestInfo=null;
+  for(let mask=1; mask<(1<<n); mask++){
+    const subset=[]; for(let i=0;i<n;i++) if(mask&(1<<i)) subset.push(dims[i]);
+    const wsum=subset.reduce((a,d)=>a+weights[d],0);
+    const wavg=subset.reduce((a,d)=>a+weights[d]*curvedScores[d],0)/wsum;
+    const capped=capOfCoverage(wsum)*wavg;
+    if(capped>best){ best=capped; bestInfo={subset,wavg,coverage:wsum}; }
+  }
+  return {total:best,...bestInfo};
+}
 function scoreShow(){
   if(!analysis) return {error:'Load a song first — there’s nothing to match against.'};
   const song=songOnTimeline();
@@ -2385,6 +2418,7 @@ function scoreShow(){
   if(!shells.length && !grounds.length) return {error:'No fireworks on the timeline yet.'};
 
   /* --- build the show's intensity envelope on the music's own frame grid --- */
+  const RADIUS_CAP=2.0;                                  // reaching for an oversized effect buys nothing here
   const inten=new Float64Array(N);
   const bursts=[], launches=[];                         // parallel arrays: bursts[i]/launches[i] are the same shell
   const decay=Math.round(1.6/fs);
@@ -2392,60 +2426,58 @@ function scoreShow(){
     const td=det(e)-t0, tl=e.t0-t0;
     bursts.push(td); launches.push(tl);                 // always counted for accent-matching below — the accents
     if(td<-1 || td>=N*fs) continue;                     // list itself is bounded, so a wide/late shell just won't match anything
-    const w=(e.params&&e.params.radius)||1;
+    const w=Math.min(RADIUS_CAP,(e.params&&e.params.radius)||1);
     const i0=Math.floor(td/fs);
     for(let k=0;k<decay;k++){ const i=i0+k; if(i<0) continue; if(i>=N) break;
       inten[i]+= w*Math.exp(-k*fs/0.6); }              // flash, then fade — this part still needs a valid array index
   }
   for(const e of grounds){                              // ground effects burn steadily
     const a=Math.max(0,Math.floor((e.t0-t0)/fs)), b=Math.min(N,Math.ceil((e.t1-t0)/fs));
-    const w=0.5*((e.rtp&&e.rtp.radius)||1);
+    const w=0.5*Math.min(RADIUS_CAP,(e.rtp&&e.rtp.radius)||1);
     for(let i=a;i<b;i++) inten[i]+=w;
   }
   const half=Math.max(1,Math.round(1.5/fs));
   const showEnv=smoothArr(Array.from(inten),half);
   const musEnv=analysis.energy;
 
-  /* --- 1. accent sync: precision + recall against detected onsets ---
+  /* --- 1. accent sync: precision + recall against detected onsets, via 1-to-1 matching ---
      Accents are weighted by how loud the music is there: you shouldn't be scored
      for "missing" a beat during a quiet passage. Only the hits that matter count.
-     A shell's DETONATION landing on a beat is full credit; its LAUNCH landing on a beat
-     (with the detonation missing) is worth 67% of that — still a visible on-beat event,
-     just not the main one. */
-  const TOL=0.20;                                       // a burst within 200ms reads as "on the hit"
-  const LAUNCH_CREDIT=0.67;
+     Landing near a beat tapers smoothly rather than a hard cutoff, and — critically — each
+     burst can only be matched to ONE accent and vice versa. Without that, a single burst near
+     several closely-packed beats (or several bursts near one beat) could each independently
+     claim full credit, inflating the score in busy passages regardless of real placement quality. */
+  const FULL=0.20, FADE=0.45, LAUNCH_CREDIT=0.67;
   const eAt=t=>analysis.energy[Math.max(0,Math.min(N-1,Math.floor(t/fs)))]||0;
   const accents=(analysis.accents||[]).filter(a=>a.t<N*fs)
     .map(a=>({t:a.t, s:a.s, w:a.s*eAt(a.t)}));          // importance = onset strength x loudness
   const ranked=[...accents].sort((a,b)=>b.w-a.w);
-  const strong=ranked.slice(0, Math.max(6, Math.round(accents.length*0.35)));   // the hits that matter
-  const nearest=(t,list)=>list.reduce((best,x)=>{
-    const d=Math.abs((x&&x.t!==undefined?x.t:x)-t); return d<best?d:best; }, Infinity);
-  let precision=0, launchOnlyCount=0;
-  if(bursts.length){
-    let sum=0;
-    for(let i=0;i<bursts.length;i++){
-      const detHit=nearest(bursts[i],accents)<=TOL;
-      const launchHit=!detHit && nearest(launches[i],accents)<=TOL;
-      if(launchHit) launchOnlyCount++;
-      sum += detHit?1:(launchHit?LAUNCH_CREDIT:0);
+  const strongSet=new Set(ranked.slice(0, Math.max(6, Math.round(accents.length*0.35))));  // the hits that matter
+  const strongIdx=[]; accents.forEach((a,i)=>{ if(strongSet.has(a)) strongIdx.push(i); });
+
+  const candidates=[];
+  for(let bi=0; bi<bursts.length; bi++){
+    for(let ai=0; ai<accents.length; ai++){
+      const dDet=Math.abs(bursts[bi]-accents[ai].t), dLaunch=Math.abs(launches[bi]-accents[ai].t);
+      const c=Math.max(proximity(dDet,FULL,FADE), proximity(dLaunch,FULL,FADE)*LAUNCH_CREDIT);
+      if(c>0) candidates.push([bi,ai,c]);
     }
-    precision=sum/bursts.length;
   }
+  candidates.sort((a,b)=>b[2]-a[2]);
+  const burstClaimed=new Array(bursts.length).fill(false), accentClaimed=new Array(accents.length).fill(false);
+  const burstCredit=new Array(bursts.length).fill(0), accentCredit=new Array(accents.length).fill(0);
+  let launchOnlyCount=0;
+  for(const [bi,ai,c] of candidates){
+    if(burstClaimed[bi]||accentClaimed[ai]) continue;
+    burstClaimed[bi]=true; accentClaimed[ai]=true;
+    burstCredit[bi]=c; accentCredit[ai]=c;
+    if(proximity(Math.abs(bursts[bi]-accents[ai].t),FULL,FADE) < c) launchOnlyCount++;  // won via launch, not detonation
+  }
+  let precision=0;
+  if(bursts.length) precision=burstCredit.reduce((a,b)=>a+b,0)/bursts.length;
   let recall=0;
-  if(strong.length){
-    let sum=0;
-    for(const a of strong){
-      let best=0;
-      for(let i=0;i<bursts.length;i++){
-        if(Math.abs(bursts[i]-a.t)<=TOL){ best=1; break; }         // detonation hit is the max — stop looking
-        if(Math.abs(launches[i]-a.t)<=TOL) best=Math.max(best,LAUNCH_CREDIT);
-      }
-      sum+=best;
-    }
-    recall=sum/strong.length;
-  }
-  const f1 = (precision+recall)>0 ? 2*precision*recall/(precision+recall) : 0;
+  if(strongIdx.length) recall=strongIdx.reduce((a,i)=>a+accentCredit[i],0)/strongIdx.length;
+  const f1=(precision+recall)>0?2*precision*recall/(precision+recall):0;
 
   /* --- 2. energy tracking --- */
   const r=pearson(showEnv,musEnv);
@@ -2466,13 +2498,19 @@ function scoreShow(){
     for(let i=0;i<a.length;i++) if(a[i]>=mx*0.9){ num+=i*a[i]; den+=a[i]; }
     return den? (num/den)*fs : 0; };
   const climaxGap=Math.abs(peakTime(showEnv)-peakTime(musEnv));
-  const climax=Math.max(0,1-climaxGap/12);              // within 12s of the music's peak
+  const climax=Math.max(0,1-climaxGap/40);              // within 40s of the music's peak — climaxes can be broad, sustained passages
 
   /* --- 4. variety: rewards actually using the app's palette, not one repeated recipe ---
      Four axes, each normalized entropy against how many options EXIST for that axis.
      A sub-metric is excluded (not zeroed) when there's too little of that category to judge —
-     a shell-only show isn't penalized twice for having no ground-effect variety to speak of. */
+     a shell-only show isn't penalized twice for having no ground-effect variety to speak of.
+     Position variety only counts spread WITHIN a sensible on-screen area — ground level and the
+     screen edges aren't "more variety," they're the show going somewhere it shouldn't. */
+  const POS_X=[0.05,0.95], POS_Y=[0.15,0.95];
+  const inSafeZone=e=>{ const x=e.x??0.5, y=(e.kind==='shell')?(e.y??0.5):1;
+    return x>=POS_X[0]&&x<=POS_X[1]&&(e.kind!=='shell'||(y>=POS_Y[0]&&y<=POS_Y[1])); };
   const pyro=[...shells,...grounds];
+  const offScreenCount=pyro.filter(e=>!inSafeZone(e)).length;
   let axisKind=null, shellTypeEnt=null, groundTypeEnt=null, axisType=null,
       axisRTP=null, colorEnt=null, posEnt=null, axisColorPos=null, variety=0;
   if(pyro.length>=2){
@@ -2494,21 +2532,30 @@ function scoreShow(){
 
     const colors=pyro.map(e=>e.color).filter(Boolean);
     colorEnt = colors.length>=2 ? normEntropy(colors,7) : null;             // 7 swatches incl. multi
-    const shellX=shells.map(e=>bin(e.x,0,1)), shellY=shells.map(e=>bin(e.y,0,1));
-    const groundX=grounds.map(e=>bin(e.x,0,1));                            // grounds only vary in x (anchored to the waterline)
-    const shellPosEnt = shells.length>=2 ? avgNonNull([normEntropy(shellX,NBINS), normEntropy(shellY,NBINS)]) : null;
-    const groundPosEnt = grounds.length>=2 ? normEntropy(groundX,NBINS) : null;
+    const shellsSafe=shells.filter(inSafeZone), groundsSafe=grounds.filter(inSafeZone);
+    const shellX=shellsSafe.map(e=>bin(e.x,POS_X[0],POS_X[1])), shellY=shellsSafe.map(e=>bin(e.y,POS_Y[0],POS_Y[1]));
+    const groundX=groundsSafe.map(e=>bin(e.x,POS_X[0],POS_X[1]));          // grounds only vary in x (anchored to the waterline)
+    const shellPosEnt = shellsSafe.length>=2 ? avgNonNull([normEntropy(shellX,NBINS), normEntropy(shellY,NBINS)]) : null;
+    const groundPosEnt = groundsSafe.length>=2 ? normEntropy(groundX,NBINS) : null;
     posEnt = avgNonNull([shellPosEnt, groundPosEnt]);
     axisColorPos = avgNonNull([colorEnt, posEnt]);
 
     variety = avgNonNull([axisKind, axisType, axisRTP, axisColorPos]) ?? 0;
+    const offScreenFrac=offScreenCount/pyro.length;                        // bounded: a couple stray shots barely
+    variety=Math.max(0, variety-Math.min(0.4,offScreenFrac));              // register; even a reckless show keeps SOME credit
   }
 
-  const total=Math.round(100*(0.24*f1 + 0.21*track + 0.09*dynamics + 0.06*climax + 0.40*variety));
+  const WEIGHTS={accent:0.30, track:0.26, dynamics:0.11, climax:0.08, variety:0.25};
+  const raw={accent:f1, track, dynamics, climax, variety};
+  const curved={}; for(const k in raw) curved[k]=curve(raw[k],0.85);
+  const capOfCoverage=w=>100*Math.pow(w,0.7);
+  const tiered=tieredTotal(curved,WEIGHTS,capOfCoverage);
+  const total=Math.round(tiered.total);
 
   /* --- actionable notes --- */
   const tips=[];
-  const missed=strong.filter(a=>nearest(a.t,bursts)>TOL).sort((a,b)=>b.s-a.s).slice(0,3);
+  const nearest=(t,list)=>list.reduce((best,x)=>{const d=Math.abs((x.t!==undefined?x.t:x)-t);return d<best?d:best;},Infinity);
+  const missed=[...strongSet].filter(a=>nearest(a.t,bursts)>FULL+FADE).sort((a,b)=>b.s-a.s).slice(0,3);
   if(recall<0.6 && missed.length)
     tips.push(`Big hits with no firework: ${missed.map(a=>fmtClock(a.t+t0)).join(', ')}`);
   if(precision<0.5 && bursts.length)
@@ -2531,12 +2578,13 @@ function scoreShow(){
   if(axisRTP!=null && axisRTP<0.4) tips.push('Radius/trails/persist barely change across the show — vary them for more visual range.');
   if(colorEnt!=null && colorEnt<0.4) tips.push('Almost everything is the same color — spread your palette out.');
   if(posEnt!=null && posEnt<0.4) tips.push('Your fireworks cluster in the same spot — spread them across the frame.');
+  if(offScreenCount>0) tips.push(`${offScreenCount} event${offScreenCount>1?'s land':' lands'} at ground level or off the edge of the frame — that costs variety credit rather than earning it.`);
   if(!tips.length) tips.push('Nicely matched — bursts land on the hits, the density follows the music, and the show uses real variety.');
 
   const verdict = total>=80?'Tightly synced' : total>=65?'Good match' : total>=45?'Loosely synced' : 'Out of step';
   return {total,verdict,f1,precision,recall,track,dynamics,climax,variety,
-          axisKind,axisType,axisRTP,axisColorPos,
-          nBursts:bursts.length,nAccents:accents.length,launchOnlyCount,tips};
+          axisKind,axisType,axisRTP,axisColorPos,subset:tiered.subset,coverage:tiered.coverage,
+          nBursts:bursts.length,nAccents:accents.length,launchOnlyCount,offScreenCount,tips};
 }
 /* ---- sync score UI ---- */
 const scoreOverlay=document.getElementById('scoreOverlay'), scoreDlg=document.getElementById('scoreDlg');
@@ -2551,21 +2599,23 @@ document.getElementById('tlScore').onclick=()=>{
     const big=document.createElement('div'); big.className='sbig'; big.textContent=s.total;
     const v=document.createElement('div'); v.className='sverdict'; v.textContent=s.verdict;
     body.append(big,v);
-    const meter=(label,val,note)=>{
+    const meter=(label,val,note,key)=>{
       const m=document.createElement('div'); m.className='smetric';
+      const counted=!key || (s.subset && s.subset.includes(key));
       const l=document.createElement('div'); l.className='smlabel';
-      const a=document.createElement('span'); a.textContent=label;
+      const a=document.createElement('span'); a.textContent=label+(counted?'':' (not counted this time)');
       const b=document.createElement('b'); b.textContent=Math.round(val*100)+'%'+(note?' · '+note:'');
       l.append(a,b);
       const bar=document.createElement('div'); bar.className='smbar';
       const f=document.createElement('div'); f.className='smfill'; f.style.width=(val*100).toFixed(0)+'%';
+      if(!counted) f.style.opacity='0.4';
       bar.appendChild(f); m.append(l,bar); body.appendChild(m);
     };
-    meter('Accent sync',s.f1,`${Math.round(s.precision*100)}% on-beat, ${Math.round(s.recall*100)}% of hits covered`);
-    meter('Energy tracking',s.track,'density vs. the music');
-    meter('Dynamics',s.dynamics,'peaks and valleys');
-    meter('Climax',s.climax,'busiest moment');
-    meter('Variety',s.variety,'kinds, types, RTP, color & position');
+    meter('Accent sync',s.f1,`${Math.round(s.precision*100)}% on-beat, ${Math.round(s.recall*100)}% of hits covered`,'accent');
+    meter('Energy tracking',s.track,'density vs. the music','track');
+    meter('Dynamics',s.dynamics,'peaks and valleys','dynamics');
+    meter('Climax',s.climax,'busiest moment','climax');
+    meter('Variety',s.variety,'kinds, types, RTP, color & position','variety');
     const tips=document.createElement('div'); tips.className='stips';
     const c=document.createElement('div'); c.className='smlabel';
     const c1=document.createElement('span'); c1.textContent=s.nBursts+' bursts';
