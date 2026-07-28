@@ -73,6 +73,7 @@
   .btn{font-family:var(--mono);font-weight:700;font-size:.64rem;letter-spacing:.07em;text-transform:uppercase;
     padding:9px 12px;border-radius:6px;cursor:pointer;border:1px solid var(--edge);color:var(--phosphor);
     background:#0f0c0a;transition:all .14s ease;user-select:none;white-space:nowrap;}
+  .btn:disabled{opacity:.35;cursor:not-allowed;filter:grayscale(.4);}
   #corners.on{color:#7dffc4;border-color:#4fd39a;box-shadow:0 0 12px rgba(60,220,150,.35);}
   #finale{color:#fff;border-color:var(--ember);background:linear-gradient(180deg,#ff6a3a,#d63c14);box-shadow:0 0 16px rgba(255,80,40,.45);}
   #finale:hover{filter:brightness(1.12);} #finale:active{transform:translateY(1px);}
@@ -322,6 +323,7 @@
     <div class="tlbar">
       <button class="btn" id="tlMin" title="Show timeline">▴</button>
       <button class="btn" id="tlPlay" title="Play show">▶</button>
+      <button class="btn" id="tlRewind" title="Rewind to 0:00">⏮</button>
       <button class="btn" id="tlRec" title="Record">●</button>
       <button class="btn" id="tlAdd" title="Add an event">✚ Event</button>
       <button class="btn on" id="tlSnap" title="Snap to ¼ second">¼s</button>
@@ -1563,7 +1565,7 @@ midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=22;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=24;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -1801,7 +1803,8 @@ const tlPanel=document.getElementById('tlPanel'), tlScroll=document.getElementBy
 const tlInner=document.getElementById('tlInner'), tlCanvas=document.getElementById('tlCanvas');
 const tlg=tlCanvas.getContext('2d');
 const tlMenu=document.getElementById('tlMenu'), tlEdit=document.getElementById('tlEdit');
-const tlPlayBtn=document.getElementById('tlPlay'), tlRecBtn=document.getElementById('tlRec');
+const tlPlayBtn=document.getElementById('tlPlay'), tlRecBtn=document.getElementById('tlRec'),
+  tlRewindBtn=document.getElementById('tlRewind');
 const tlSnapBtn=document.getElementById('tlSnap'), tlMinBtn=document.getElementById('tlMin');
 const tlLenEl=document.getElementById('tlLen'), tlClockEl=document.getElementById('tlClock');
 let tlSel=null, tlDrag=null, tlPlaying=false, tlTime=0, tlLanes=TL_MIN_LANES, songName='song';
@@ -2242,14 +2245,33 @@ function tlEndEvent(e){
 }
 function tlStart(){
   if(!timeline.events.length){ tlOpen(); return; }
+  const resumeAt=tlTime;
   tlStop(); ensureAudio();
-  timeline.events.forEach(e=>{ e._fired=false; e._ended=false; e._rec=false; e._em=null; });
-  tlTime=0; tlPlaying=true; tlPlayBtn.classList.add('on'); tlPlayBtn.textContent='■'; tlPlayBtn.title='Stop show';
+  // sitting well past the end of the show (e.g. it already auto-stopped here) -- start over
+  // rather than "resuming" into a spot where there's nothing left to play.
+  tlTime = (resumeAt>=showEndTime()+TAIL) ? 0 : resumeAt;
+  const songEv=songOnTimeline();
+  timeline.events.forEach(e=>{                       // anything before the resume point already happened
+    const t1=e.t1!=null?e.t1:e.t0+0.6;
+    e._fired = e.t0<=tlTime; e._ended = e._fired && t1<=tlTime;
+    e._rec=false; e._em=null;
+  });
+  tlPlaying=true; tlPlayBtn.classList.add('on'); tlPlayBtn.textContent='■'; tlPlayBtn.title='Stop show';
+  tlFileBtn.disabled=true; tlRewindBtn.disabled=true; closeFileMenu();  // no editing the saved show out from under a running one
+  if(songEv && audioPlayer.buf && songEv.t0<=tlTime && tlTime<(songEv.t1!=null?songEv.t1:songEv.t0+audioPlayer.dur)){
+    audioPlayer.offset=Math.max(0,tlTime-songEv.t0);   // resuming into the middle of the song — seek to match
+    audioPlayer.play({loop:false}); updatePlayUI();
+  }
 }
 function tlStop(){
   tlPlaying=false; tlPlayBtn.classList.remove('on'); tlPlayBtn.textContent='▶'; tlPlayBtn.title='Play show';
+  tlFileBtn.disabled=false; tlRewindBtn.disabled=false;
   audioPlayer.stop(); setMessage(''); ledSpeed=0.16; updatePlayUI();
   timeline.events.forEach(e=>{ if(e._em && e._em.life!==undefined) e._em.life=0; e._em=null; });
+}
+function tlRewind(){                                  // back to 0:00 — not available mid-playback or mid-recording
+  if(tlPlaying || recording) return;
+  tlTime=0; tlClockEl.textContent=fmtClock(0); tlFollowPlayhead(); tlDraw();
 }
 function tlFollowPlayhead(){
   if(tlPanel.classList.contains('collapsed')) return;
@@ -2299,7 +2321,7 @@ function tlRecordStart(){
   // existing events replay as the playhead reaches them, so recording layers onto the current show
   timeline.events.forEach(e=>{ e._fired=false; e._ended=false; e._rec=false; e._em=null; });
   const begin=()=>{ recording=true; recT0=performance.now();
-    tlRecBtn.classList.add('on'); updateRecLabel(); tlOpen(); };
+    tlRecBtn.classList.add('on'); tlRewindBtn.disabled=true; updateRecLabel(); tlOpen(); };
   if(songEv && audioPlayer.buf){
     audioPlayer.offset=0;
     audioPlayer.play({loop:false});                   // starts inside the gesture — what iOS requires
@@ -2308,7 +2330,7 @@ function tlRecordStart(){
   begin();
 }
 function tlRecordStop(){
-  recording=false; tlRecBtn.classList.remove('on'); updateRecLabel();
+  recording=false; tlRecBtn.classList.remove('on'); tlRewindBtn.disabled=false; updateRecLabel();
   audioPlayer.stop(); updatePlayUI();
   timeline.events.forEach(e=>{ if(e.kind==='shell' && e.t1==null) e.t1=e.t0+1.2;   // never exploded
     e._rec=false; if(e._em&&e._em.life!==undefined) e._em.life=0; e._em=null; });   // clear transient state
@@ -2318,6 +2340,7 @@ function tlRecordStop(){
 }
 tlRecBtn.onclick=()=>{ recording? tlRecordStop() : tlRecordStart(); };
 tlPlayBtn.onclick=()=>{ tlPlaying? tlStop() : tlStart(); };
+tlRewindBtn.onclick=tlRewind;
 const tlAddBtn=document.getElementById('tlAdd');
 tlAddBtn.onclick=()=>{ tlOpen();
   // insert at the playhead if it's in view; otherwise at the middle of what you're looking at
@@ -2516,6 +2539,17 @@ function scoreShow(){
   if(pyro.length>=2){
     const NBINS=5, RAD_MIN=0.5,RAD_MAX=1.8, TR_MIN=0,TR_MAX=1, PE_MIN=0.6,PE_MAX=2;
     const bin=(v,mn,mx)=>Math.floor(Math.max(0,Math.min(0.999999,((v??mn)-mn)/(mx-mn)))*NBINS);
+    /* RTP variety only asks for spread within the middle 70% of each slider (15%-85% of where you'd
+       actually drag it) — the outer bands tend to look bad (an overly-tiny effect, an overwhelming
+       one), so a show that never visits them shouldn't be penalized for it. Using them is an optional
+       bonus category, not a requirement: staying inside the core band and varying well within it can
+       still reach full credit on its own. */
+    const binRTP=(v,mn,mx)=>{
+      const cMn=mn+0.15*(mx-mn), cMx=mn+0.85*(mx-mn), val=v??mn;
+      if(val<cMn) return 'lo'; if(val>cMx) return 'hi';
+      const t=(val-cMn)/(cMx-cMn);
+      return 'c'+Math.floor(Math.max(0,Math.min(0.999999,t))*NBINS);
+    };
 
     axisKind=normEntropy(pyro.map(e=>e.kind), 2);                          // shells vs grounds
 
@@ -2525,9 +2559,9 @@ function scoreShow(){
 
     const radii=[], trailsArr=[], persists=[];                             // pooled: shells' params + grounds' rtp
     for(const e of shells){ const p=e.params||{};
-      radii.push(bin(p.radius,RAD_MIN,RAD_MAX)); trailsArr.push(bin(p.trails,TR_MIN,TR_MAX)); persists.push(bin(p.persist,PE_MIN,PE_MAX)); }
+      radii.push(binRTP(p.radius,RAD_MIN,RAD_MAX)); trailsArr.push(binRTP(p.trails,TR_MIN,TR_MAX)); persists.push(binRTP(p.persist,PE_MIN,PE_MAX)); }
     for(const e of grounds){ const p=e.rtp||{};
-      radii.push(bin(p.radius,RAD_MIN,RAD_MAX)); trailsArr.push(bin(p.trails,TR_MIN,TR_MAX)); persists.push(bin(p.persist,PE_MIN,PE_MAX)); }
+      radii.push(binRTP(p.radius,RAD_MIN,RAD_MAX)); trailsArr.push(binRTP(p.trails,TR_MIN,TR_MAX)); persists.push(binRTP(p.persist,PE_MIN,PE_MAX)); }
     axisRTP = avgNonNull([normEntropy(radii,NBINS), normEntropy(trailsArr,NBINS), normEntropy(persists,NBINS)]);
 
     const colors=pyro.map(e=>e.color).filter(Boolean);
