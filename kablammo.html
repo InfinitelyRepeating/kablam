@@ -278,6 +278,19 @@
   @media (max-height:820px) and (orientation:landscape){
     #console{max-height:60vh;}
     .bstage{height:min(220px,44vh);min-height:150px;}
+    /* landscape has the width to spare (it's the phone's long dimension) even though it's short
+       on height — so merge the tab row into the quick-bar row here, unlike portrait. */
+    #console{flex-direction:row;flex-wrap:wrap;}
+    .qbar{width:auto;flex:1 1 auto;}
+    .spacer{flex:0 0 0;width:0;}
+    .tabbar{display:flex;width:auto;margin-top:0;flex:0 0 auto;gap:3px;}
+    .tab{flex:0 0 auto;padding:6px 9px;font-size:0;}          /* text hidden — emoji injected below */
+    .tab::before{font-size:.85rem;}
+    .tab[data-tab="shell"]::before{content:"🎆";}
+    .tab[data-tab="ground"]::before{content:"💣";}
+    .tab[data-tab="scene"]::before{content:"🖼️";}
+    .tab[data-tab="music"]::before{content:"🎵";}
+    .tab[data-tab="text"]::before{content:"💬";}
   }
 </style>
 </head>
@@ -1585,7 +1598,7 @@ midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=27;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=28;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
