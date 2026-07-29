@@ -359,10 +359,8 @@
       <button class="btn" id="tlScore" title="Score how well the show matches the music">◎ Sync</button>
       <span class="spacer"></span>
       <span class="bnote" id="tlClock">0:00.0</span>
-      <span class="lbl">Length</span>
-      <button class="btn" id="tlMinus" title="Shorten show by 10s">−10s</button>
+      <span class="lbl" title="How far the timeline currently extends">Length</span>
       <span class="bnote" id="tlLen">5:00</span>
-      <button class="btn" id="tlPlus" title="Lengthen show by 10s">+10s</button>
       <button class="btn" id="tlFile" title="Save, load or clear the show">📁</button>
     </div>
     <div id="tlScroll"><div id="tlInner"><canvas id="tlCanvas"></canvas></div></div>
@@ -530,7 +528,7 @@ function copyCustom(cs){ return cs ? {shells:cs.shells.map(s=>({base:s.base,cuts
   regions:{...s.regions},deform:{...s.deform},rtp:{...s.rtp}}))} : null; }
 
 /* ---- sequencer state (declared early: launch/groundShot record into it) ---- */
-const timeline={duration:300, events:[], snap:true, zoom:40};
+const timeline={events:[], snap:true, zoom:40};
 let recording=false, recT0=0, recOffset=0, uid=1;
 const nextId=()=>uid++;
 function recNow(){ return (performance.now()-recT0)/1000; }
@@ -1599,7 +1597,7 @@ midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=31;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=32;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -1906,7 +1904,7 @@ function tlViewH(){ return Math.min(tlContentH(), Math.round(window.innerHeight*
 function tlResize(){
   if(tlPanel.classList.contains('collapsed')) return;
   const contentH=tlContentH(), viewH=tlViewH();
-  tlInner.style.width=Math.max(1,timeline.duration*timeline.zoom)+'px';
+  tlInner.style.width=Math.max(1,computedDuration()*timeline.zoom)+'px';
   tlInner.style.height=contentH+'px';                 // real content size -> scrollbars track it
   const w=tlScroll.clientWidth||300, d=Math.min(window.devicePixelRatio||1,2);
   tlCanvas.style.width=w+'px'; tlCanvas.style.height=viewH+'px';   // canvas = just the visible window
@@ -1916,7 +1914,7 @@ function tlResize(){
   const maxTop=Math.max(0,contentH-viewH);
   if(tlScroll.scrollTop>maxTop) tlScroll.scrollTop=maxTop;   // events deleted -> don't strand the view
   tlCanvas.style.top=tlScroll.scrollTop+'px';
-  tlLenEl.textContent=fmtTime(timeline.duration);
+  tlLenEl.textContent=fmtTime(computedDuration());
 }
 function drawEvent(e,off,voff,w,vh){
   const z=timeline.zoom, t1=(e.t1==null?e.t0+0.6:e.t1);
@@ -2000,7 +1998,7 @@ tlCanvas.addEventListener('pointerdown',ev=>{
   movedFar=false; downPt={ax,y,cx:ev.clientX};
   if(y<TL_RULER_H){                                  // ruler: press and drag to scrub
     scrubbing=true; tlCanvas.setPointerCapture(ev.pointerId);
-    tlTime=Math.max(0,Math.min(timeline.duration,ax/z));
+    tlTime=Math.max(0,Math.min(computedDuration(),ax/z));
     tlClockEl.textContent=fmtClock(tlTime); tlDraw(); return;
   }
   const hit=hitEvent(ax,y);
@@ -2025,7 +2023,7 @@ tlCanvas.addEventListener('pointermove',ev=>{
   if(downPt && Math.abs(ev.clientX-downPt.cx)>MOVE_TOL) movedFar=true;
 
   if(scrubbing){                                     // drag along the ruler to move the playhead
-    tlTime=Math.max(0,Math.min(timeline.duration,ax/z));
+    tlTime=Math.max(0,Math.min(computedDuration(),ax/z));
     tlClockEl.textContent=fmtClock(tlTime); autoPan(ev.clientX); tlDraw(); return; }
 
   if(panning){ if(movedFar){ tlScroll.scrollLeft=Math.max(0,panning.sl-(ev.clientX-panning.cx));
@@ -2043,7 +2041,6 @@ tlCanvas.addEventListener('pointermove',ev=>{
   else if(tlDrag.mode==='end'){ e.t1=Math.max(e.t0+0.1,snapT(t)); }
   else if(tlDrag.mode==='start'){ const t1=e.t1==null?e.t0+0.6:e.t1;
     e.t0=Math.max(0,Math.min(t1-0.1,snapT(t))); }                 // resize from the left, end stays put
-  if(e.t1>timeline.duration) timeline.duration=Math.ceil(e.t1/10)*10;
   autoPan(ev.clientX);                                            // keep the handle under the finger
   relayout(); tlResize(); tlDraw();
 });
@@ -2126,7 +2123,6 @@ function createEvent(kind,t){
   else if(kind==='song') e={id:nextId(),kind,t0:t,t1:t+(audioPlayer.dur||30),name:songName,trackUrl:(activeTrack&&activeTrack.url)||undefined};
   else return;
   timeline.events.push(e);
-  if(e.t1>timeline.duration) timeline.duration=Math.ceil((e.t1+5)/10)*10;
   tlRefresh(); openEditor(e,lastClick.x,lastClick.y);
 }
 
@@ -2352,10 +2348,20 @@ function showEndTime(){                              // when the last marked eve
   for(const e of timeline.events) last=Math.max(last, e.t1!=null?e.t1:e.t0+0.6);
   return last;
 }
+/* How far the timeline extends is now computed, not manually set (the old +10s/-10s buttons are
+   gone). Whichever is largest: a roughly-8-minute floor (no need to be precise about it), 3
+   minutes past the last event on the timeline — which also naturally covers "show the whole
+   freshly-loaded song," since autoSongEvent() puts a real event on the timeline for the track —
+   or, while actively recording, enough to keep the live playhead itself in view even before
+   anything's actually been placed yet. */
+function computedDuration(){
+  const liveExtra=recording?tlTime+10:0;
+  return Math.max(480, showEndTime()+180, liveExtra);
+}
 function tlTick(dt){
   if(recording){                                   // playhead tracks the live recording clock
     tlTime=recNow()+recOffset;
-    if(tlTime>timeline.duration){ timeline.duration=Math.ceil((tlTime+10)/10)*10; tlResize(); }
+    if(tlTime+10>Math.max(480,showEndTime()+180)) tlResize();   // live playhead pushed past the otherwise-computed extent -- keep the ruler growing to show it
     // fire pre-existing events as the playhead passes them, so you can record ON TOP of a show.
     // freshly-recorded events carry _rec and are skipped here — they already happened live.
     for(const e of timeline.events){
@@ -2372,7 +2378,7 @@ function tlTick(dt){
     if(e._fired && !e._ended && e.t1!=null && tlTime>=e.t1){ tlEndEvent(e); e._ended=true; }
   }
   // stop when the show is actually over, not when the (possibly padded) timeline runs out
-  const end=Math.min(showEndTime()+TAIL, timeline.duration);
+  const end=Math.min(showEndTime()+TAIL, computedDuration());
   if(tlTime>=end) tlStop();
   tlClockEl.textContent=fmtClock(tlTime);
   tlFollowPlayhead(); tlDraw();
@@ -2402,8 +2408,6 @@ function tlRecordStop(){
   audioPlayer.stop(); updatePlayUI();
   timeline.events.forEach(e=>{ if(e.kind==='shell' && e.t1==null) e.t1=e.t0+1.2;   // never exploded
     e._rec=false; if(e._em&&e._em.life!==undefined) e._em.life=0; e._em=null; });   // clear transient state
-  let maxT=0; timeline.events.forEach(e=>{ maxT=Math.max(maxT,e.t1||0); });
-  if(maxT+5>timeline.duration) timeline.duration=Math.ceil((maxT+5)/10)*10;
   tlRefresh();
 }
 tlRecBtn.onclick=()=>{ recording? tlRecordStop() : tlRecordStart(); };
@@ -2416,14 +2420,12 @@ tlAddBtn.onclick=()=>{ tlOpen();
   const inView = px>=sl+8 && px<=sl+w-8;
   const t = inView ? tlTime : (sl+w/2)/z;
   const r=tlAddBtn.getBoundingClientRect();
-  openMenu(r.left, r.top, Math.max(0,Math.min(timeline.duration,t)));
+  openMenu(r.left, r.top, Math.max(0,Math.min(computedDuration(),t)));
 };
 tlSnapBtn.onclick=()=>{ timeline.snap=!timeline.snap; tlSnapBtn.classList.toggle('on',timeline.snap);
   tlSnapBtn.textContent=timeline.snap?'¼s':'free'; };
 tlMinBtn.onclick=()=>{ const c=tlPanel.classList.toggle('collapsed');
   tlMinBtn.textContent=c?'▴':'▾'; tlMinBtn.classList.toggle('on',!c); if(!c) tlRefresh(); };
-document.getElementById('tlPlus').onclick=()=>{ timeline.duration+=10; tlRefresh(); };
-document.getElementById('tlMinus').onclick=()=>{ timeline.duration=Math.max(20,timeline.duration-10); tlRefresh(); };
 /* ============================================================
    SYNC SCORE — how well does the show match the music?
    Five independent signals, deliberately measuring different failures:
@@ -2773,7 +2775,7 @@ const tlFileMenu=document.getElementById('tlFileMenu'), tlFileBtn=document.getEl
 const tlLoadInput=document.getElementById('tlLoad');
 function closeFileMenu(){ tlFileMenu.classList.remove('on'); }
 function saveShow(){
-  const data={version:1,duration:timeline.duration,snap:timeline.snap,zoom:timeline.zoom,
+  const data={version:1,duration:computedDuration(),snap:timeline.snap,zoom:timeline.zoom,
     events:timeline.events.map(({_fired,_ended,_em,_rec,lane,...rest})=>rest)};
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='kablammo-show.json';
@@ -2804,7 +2806,7 @@ tlFileBtn.onclick=()=>{
 tlLoadInput.onchange=ev=>{ const f=ev.target.files[0]; if(!f) return;
   const rd=new FileReader();
   rd.onload=()=>{ try{ const d=JSON.parse(rd.result);
-      timeline.duration=d.duration||300; timeline.snap=d.snap!==false; timeline.zoom=d.zoom||40;
+      timeline.snap=d.snap!==false; timeline.zoom=d.zoom||40;
       timeline.events=(d.events||[]).map(e=>({...e,id:nextId()}));
       tlSnapBtn.classList.toggle('on',timeline.snap);
       tlSnapBtn.textContent=timeline.snap?'¼s':'free';
@@ -2820,9 +2822,9 @@ function autoSongEvent(){
   if(!audioPlayer.buf) return;
   timeline.events=timeline.events.filter(e=>e.kind!=='song');
   const d=audioPlayer.dur;
-  timeline.duration=Math.max(60,Math.ceil(d+20));            // 10s padding on each side
   timeline.events.push({id:nextId(),kind:'song',t0:10,t1:10+d,name:songName,trackUrl:(activeTrack&&activeTrack.url)||undefined});
-  timeline.zoom=Math.max(3,(window.innerWidth-40)/timeline.duration);   // fit the whole show on screen
+  const songSpan=Math.max(60,Math.ceil(d+20));           // fit tightly around the SONG itself here —
+  timeline.zoom=Math.max(3,(window.innerWidth-40)/songSpan);   // separate from the scroll-out clamp below
   tlOpen();
 }
 window.addEventListener('resize',()=>{ if(!tlPanel.classList.contains('collapsed')){ tlResize(); tlDraw(); } });
