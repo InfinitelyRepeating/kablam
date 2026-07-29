@@ -1599,7 +1599,7 @@ midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=30;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=31;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -1832,7 +1832,22 @@ function setDockShift(v){
   // quick-bar — depends on what's open) isn't guaranteed to have a way back. This tab always does.
   refreshDockRestoreVisibility();
 }
-window.addEventListener('resize',refreshDockRestoreVisibility);   // orientation change etc. while shifted
+let lastLandscape=window.innerWidth>=window.innerHeight;
+function handleViewportChange(){
+  const nowLandscape=window.innerWidth>=window.innerHeight;
+  const orientationFlipped=nowLandscape!==lastLandscape;
+  lastLandscape=nowLandscape;
+  if(orientationFlipped) setDockShift(0);           // aspect ratio changed — don't carry over a drag
+  else refreshDockRestoreVisibility();              // position that was only ever tuned for the old shape
+  // resize fires before the browser necessarily finishes re-applying orientation-based media queries
+  // and reflowing — measuring .qbar right away can catch a layout that hasn't settled into its new
+  // shape yet (this was the "checking too soon" bug: a real rotation could misreport as clipped).
+  // Re-check after the browser's had a couple of frames, and again after iOS Safari's known delay in
+  // settling viewport metrics post-rotation.
+  requestAnimationFrame(()=>requestAnimationFrame(refreshDockRestoreVisibility));
+  setTimeout(refreshDockRestoreVisibility,350);
+}
+window.addEventListener('resize',handleViewportChange);
 // click, not pointerdown: acting on pointerdown moves the whole dock BEFORE the finger/mouse lifts,
 // so the release half of the tap lands on whatever button the shifted layout put under it instead —
 // exactly the "taps hit the rightmost button" bug. click only fires once, after a full press-and-
