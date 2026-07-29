@@ -10,7 +10,7 @@ Kablammo was inspired by The Complete Computer Fireworks Celebration Kit (1985),
 The much of the display is self-explanatory, and if you don't understand what something does, play with it until you do! Still, here are some helpful tips.
 
 * You have both shells and ground effects. Shells can be launched by clicking in the air. Ground effects can be activated by clicking below the ground line in the scene.
-* The radius/trails/persistence (RTP) sliders primarily effect aerial shells, not ground effects.
+* The radius/trails/persistence (RTP) sliders affect shells and ground effects differently. In particular, most ground effects will ignore the trails slider, and the radius slider will determine the size of the effect.
 * The hammer icon refers to the "Shell Builder." The Shell Builder lets you subdivide a particular shell pattern up to two times, color each section of shells differently, deform the distribution of fragments, and set a unique RTP value for that shell (which gets combined with the global RTP sliders). You can also combine up to two shell types. Shell builder only applies to aerial shells.
 * The LED sign shows at ground level, and scrolls for lengthy messages
 * You can load mp3, m4a and MIDI music. Doing so will automatically add the music to the timeline (see below), but you can also just play it and launch fireworks in real time. The page also ships with a selection of public domain/freely licensed music that's popular for fireworks shows.
@@ -20,7 +20,7 @@ The much of the display is self-explanatory, and if you don't understand what so
 
 The timeline lets you record and play back shows, especially with musical accompaniment. Loaded music will automatically appear at the top of the timeline, shaded by the amount of energy in the song.
 
-The red play head can be positioned by clicking on the ruler. Using the mouse wheel (or pinching) on the ruler will zoom in/out.
+The red play head can be positioned by clicking on the ruler. Using the mouse wheel (or pinching) on the ruler will zoom in/out. Pressing play will usually play the show from the play head position, though there is a rewind button, and it will automatically rewind if the play head is more than 2.5 seconds past the last event in the timeline.
 
 A recorded show consists of a series of events. Events can represent a launched shell, a ground effect, or an LED message. Events are shown as rectangles on the timeline. Events can be added by clicking on the timeline with the mouse, or (on mobile) by positioning the red play head and tapping the "+ Event" button. Events will automatically snap to the nearest quarter second, unless snap-to is turned off.
 
@@ -36,7 +36,7 @@ While events CAN be manually added one at a time, it's recommended that you use 
 
 You can use the record button to "outline" a show, and then manually revise the events for timing and variety.
 
-Recorded shows with musical accompaniment are given a "Sync Score" to rate how well the show goes with the music. Clicking the "sync" button will bring up your score, along with tips for improving it. Note that for shells, the sync score pays attention to when a shell detonates, not when it launches.
+Recorded shows with musical accompaniment are given a "Sync Score" to rate how well the show goes with the music. Shows are graded on beat matching, energy matching, dynamics matching (eg. ebb and flow of music), variety of effects/positions/rtp values, and the climax of the song. Clicking the "sync" button will bring up your score, along with tips for improving it. Note that for shells, the sync score likes it when shells detonate on beat, but will award partial credit for launching on beat.
 
 Shows can be saved/loaded as JSON.
 
