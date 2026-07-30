@@ -1597,7 +1597,7 @@ midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=33;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=34;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -1900,7 +1900,13 @@ function relayout(){
   tlLanes=Math.max(TL_MIN_LANES,lanes.length);
 }
 function tlContentH(){ return TL_RULER_H+tlLanes*TL_LANE_H+10; }   // full height of all lanes
-function tlViewH(){ return Math.min(tlContentH(), Math.round(window.innerHeight*0.38)); }
+function tlViewH(){
+  // measure the ACTUAL rendered height rather than independently estimating it from vh units —
+  // iOS Safari in particular can make window.innerHeight*0.38 diverge from what #tlScroll's own
+  // CSS max-height:38vh actually renders as, which left the canvas sized larger than the real
+  // clipped area — content drawn correctly by JS, then silently cut off by the browser anyway.
+  return tlScroll.clientHeight || Math.min(tlContentH(), Math.round(window.innerHeight*0.38));
+}
 function tlResize(){
   if(tlPanel.classList.contains('collapsed')) return;
   const contentH=tlContentH(), viewH=tlViewH();
