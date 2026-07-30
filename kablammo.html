@@ -1597,7 +1597,7 @@ midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=32;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=33;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -1995,7 +1995,7 @@ tlCanvas.addEventListener('pointerdown',ev=>{
   if(ev.button===2) return;
   const {ax,y}=tlAbs(ev), z=timeline.zoom;
   lastClick={x:ev.clientX,y:ev.clientY}; closeMenu();
-  movedFar=false; downPt={ax,y,cx:ev.clientX};
+  movedFar=false; downPt={ax,y,cx:ev.clientX,cy:ev.clientY};
   if(y<TL_RULER_H){                                  // ruler: press and drag to scrub
     scrubbing=true; tlCanvas.setPointerCapture(ev.pointerId);
     tlTime=Math.max(0,Math.min(computedDuration(),ax/z));
@@ -2012,22 +2012,23 @@ tlCanvas.addEventListener('pointerdown',ev=>{
     tlSel=hit.e; tlDrag={e:hit.e,mode:'pending-move',grab:ax/z-hit.e.t0,dur:(hit.e.t1||hit.e.t0)-hit.e.t0};
     tlCanvas.setPointerCapture(ev.pointerId); tlDraw(); return;
   }
-  // empty track: touch never creates by accident — drag pans, tap just deselects
+  // empty track: touch never creates by accident — drag pans (both axes), tap just deselects
   closeEditor(); tlSel=null;
-  if(isTouch){ panning={sl:tlScroll.scrollLeft,cx:ev.clientX}; tlCanvas.setPointerCapture(ev.pointerId); }
+  if(isTouch){ panning={sl:tlScroll.scrollLeft,st:tlScroll.scrollTop,cx:ev.clientX,cy:ev.clientY}; tlCanvas.setPointerCapture(ev.pointerId); }
   else openMenu(ev.clientX,ev.clientY,ax/z);        // desktop: a click can't misfire, so create directly
   tlDraw();
 });
 tlCanvas.addEventListener('pointermove',ev=>{
   const {ax,y}=tlAbs(ev), z=timeline.zoom;
-  if(downPt && Math.abs(ev.clientX-downPt.cx)>MOVE_TOL) movedFar=true;
+  if(downPt && (Math.abs(ev.clientX-downPt.cx)>MOVE_TOL || Math.abs(ev.clientY-downPt.cy)>MOVE_TOL)) movedFar=true;
 
   if(scrubbing){                                     // drag along the ruler to move the playhead
     tlTime=Math.max(0,Math.min(computedDuration(),ax/z));
     tlClockEl.textContent=fmtClock(tlTime); autoPan(ev.clientX); tlDraw(); return; }
 
   if(panning){ if(movedFar){ tlScroll.scrollLeft=Math.max(0,panning.sl-(ev.clientX-panning.cx));
-      tlCanvas.style.left=tlScroll.scrollLeft+'px'; tlDraw(); } return; }
+      tlScroll.scrollTop=Math.max(0,panning.st-(ev.clientY-panning.cy));
+      tlCanvas.style.left=tlScroll.scrollLeft+'px'; tlCanvas.style.top=tlScroll.scrollTop+'px'; tlDraw(); } return; }
 
   if(!tlDrag){ const h=hitEvent(ax,y);
     tlCanvas.style.cursor = y<TL_RULER_H?'ew-resize'
