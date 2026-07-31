@@ -157,8 +157,10 @@
   #dock input[type=text],#dock input[type=number]{-webkit-user-select:text;user-select:text;}
   .sel.narrow{flex:0 0 auto;width:auto;min-width:0;}
   .sldrow{gap:10px;align-items:flex-end;}
+  .sldrow .sld{gap:7px;}   /* the 12px thumb overflows ~4.5px past the 3px track on each side —
+                              1px of gap wasn't enough clearance before the label below it started */
   .padwrap{margin:6px 0 2px;}
-  .pad{background:#05060f;border:1px solid var(--edge);border-radius:5px;
+  .pad{position:static;inset:auto;background:#05060f;border:1px solid var(--edge);border-radius:5px;
     max-width:100%;max-height:44vh;width:auto;height:auto;margin:0 auto;
     touch-action:none;cursor:crosshair;display:block;}
   .padcap{font-size:.55rem;letter-spacing:.06em;color:var(--amber-dim);text-align:center;margin-top:5px;line-height:1.4;}
@@ -1597,7 +1599,7 @@ midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=36;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=37;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
