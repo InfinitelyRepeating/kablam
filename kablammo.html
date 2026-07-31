@@ -1597,7 +1597,7 @@ midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=34;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=35;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -1977,7 +1977,12 @@ function tlDraw(){
     tlg.fillRect(w-14,TL_RULER_H+2,10,2); tlg.fillRect(w-12,TL_RULER_H+6,6,2); }
 }
 function tlRefresh(){ relayout(); tlResize(); tlDraw(); if(typeof updateRecLabel==='function') updateRecLabel(); }
-function tlOpen(){ tlPanel.classList.remove('collapsed'); tlMinBtn.textContent='▾'; tlMinBtn.classList.add('on'); tlRefresh(); }
+function tlOpen(){ tlPanel.classList.remove('collapsed'); tlMinBtn.textContent='▾'; tlMinBtn.classList.add('on'); tlRefresh();
+  // a synchronous clientHeight read right after unhiding the panel can still see its old
+  // (display:none, height=0) state — the browser hasn't necessarily laid it out yet at this exact
+  // point. Re-measure once it has, same pattern as the orientation-change fix.
+  requestAnimationFrame(()=>requestAnimationFrame(tlRefresh));
+}
 
 /* ---- interaction ---- */
 function tlAbs(ev){ const r=tlScroll.getBoundingClientRect();
@@ -2432,7 +2437,9 @@ tlAddBtn.onclick=()=>{ tlOpen();
 tlSnapBtn.onclick=()=>{ timeline.snap=!timeline.snap; tlSnapBtn.classList.toggle('on',timeline.snap);
   tlSnapBtn.textContent=timeline.snap?'¼s':'free'; };
 tlMinBtn.onclick=()=>{ const c=tlPanel.classList.toggle('collapsed');
-  tlMinBtn.textContent=c?'▴':'▾'; tlMinBtn.classList.toggle('on',!c); if(!c) tlRefresh(); };
+  if(c){ tlMinBtn.textContent='▴'; tlMinBtn.classList.remove('on'); }
+  else tlOpen();   // reuse the same (now layout-safe) open path — already removes 'collapsed' idempotently
+};
 /* ============================================================
    SYNC SCORE — how well does the show match the music?
    Five independent signals, deliberately measuring different failures:
