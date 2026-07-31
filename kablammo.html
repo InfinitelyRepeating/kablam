@@ -1597,7 +1597,7 @@ midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=35;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=36;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -1909,9 +1909,14 @@ function tlViewH(){
 }
 function tlResize(){
   if(tlPanel.classList.contains('collapsed')) return;
-  const contentH=tlContentH(), viewH=tlViewH();
+  const contentH=tlContentH();
   tlInner.style.width=Math.max(1,computedDuration()*timeline.zoom)+'px';
-  tlInner.style.height=contentH+'px';                 // real content size -> scrollbars track it
+  tlInner.style.height=contentH+'px';                 // set BEFORE measuring viewH below — tlViewH()
+  const viewH=tlViewH();                              // reads tlScroll.clientHeight, which depends on
+                                                        // tlInner's CURRENT height. Reading it before
+                                                        // writing this meant every call measured against
+                                                        // the PREVIOUS render's content, not this one —
+                                                        // the actual root cause, not just a timing quirk.
   const w=tlScroll.clientWidth||300, d=Math.min(window.devicePixelRatio||1,2);
   tlCanvas.style.width=w+'px'; tlCanvas.style.height=viewH+'px';   // canvas = just the visible window
   tlCanvas.width=Math.round(w*d); tlCanvas.height=Math.round(viewH*d);
@@ -2037,8 +2042,11 @@ tlCanvas.addEventListener('pointermove',ev=>{
     tlTime=Math.max(0,Math.min(computedDuration(),ax/z));
     tlClockEl.textContent=fmtClock(tlTime); autoPan(ev.clientX); tlDraw(); return; }
 
-  if(panning){ if(movedFar){ tlScroll.scrollLeft=Math.max(0,panning.sl-(ev.clientX-panning.cx));
-      tlScroll.scrollTop=Math.max(0,panning.st-(ev.clientY-panning.cy));
+  if(panning){ if(movedFar){
+      const maxLeft=Math.max(0, computedDuration()*z - tlScroll.clientWidth);
+      const maxTop=Math.max(0, tlContentH()-tlViewH());
+      tlScroll.scrollLeft=Math.max(0,Math.min(maxLeft, panning.sl-(ev.clientX-panning.cx)));
+      tlScroll.scrollTop=Math.max(0,Math.min(maxTop, panning.st-(ev.clientY-panning.cy)));
       tlCanvas.style.left=tlScroll.scrollLeft+'px'; tlCanvas.style.top=tlScroll.scrollTop+'px'; tlDraw(); } return; }
 
   if(!tlDrag){ const h=hitEvent(ax,y);
@@ -2062,7 +2070,8 @@ function autoPan(clientX){
   let d=0;
   if(clientX>r.right-edge) d=(clientX-(r.right-edge))*0.35;
   else if(clientX<r.left+edge) d=(clientX-(r.left+edge))*0.35;
-  if(d){ tlScroll.scrollLeft=Math.max(0,tlScroll.scrollLeft+d); tlCanvas.style.left=tlScroll.scrollLeft+'px'; }
+  if(d){ const maxLeft=Math.max(0, computedDuration()*timeline.zoom - tlScroll.clientWidth);
+    tlScroll.scrollLeft=Math.max(0,Math.min(maxLeft,tlScroll.scrollLeft+d)); tlCanvas.style.left=tlScroll.scrollLeft+'px'; }
 }
 function endTlPointer(ev){
   panning=null; scrubbing=false;
