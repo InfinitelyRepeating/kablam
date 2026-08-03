@@ -1599,7 +1599,7 @@ midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=38;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=39;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -2896,15 +2896,23 @@ qbar.addEventListener('pointerdown',e=>{
 });
 qbar.addEventListener('pointerup',()=>{ dockDragY=null; });
 
-/* pinch to zoom the timeline on touch */
+/* pinch to zoom the timeline on touch — anchored at the midpoint between the two fingers, same
+   technique as the desktop wheel-zoom: find the time value under the anchor before changing zoom,
+   then reposition scrollLeft after so that same time value lands back under the same screen point.
+   Re-anchored to the CURRENT midpoint every touchmove, not just the gesture's starting point, so the
+   spot under your fingers stays locked to your fingers throughout the whole gesture. */
 let pinch=null;
 tlScroll.addEventListener('touchstart',e=>{ if(e.touches.length===2){
   const [a,b]=e.touches, d=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
   pinch={d,zoom:timeline.zoom}; } },{passive:true});
 tlScroll.addEventListener('touchmove',e=>{ if(pinch&&e.touches.length===2){ e.preventDefault();
   const [a,b]=e.touches, d=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
+  const r=tlScroll.getBoundingClientRect(), midX=(a.clientX+b.clientX)/2-r.left;
+  const tAt=(midX+tlScroll.scrollLeft)/timeline.zoom;
   timeline.zoom=Math.max(3,Math.min(600,pinch.zoom*(d/pinch.d)));
-  tlResize(); tlCanvas.style.left=tlScroll.scrollLeft+'px'; tlDraw(); } },{passive:false});
+  tlResize();
+  tlScroll.scrollLeft=Math.max(0, tAt*timeline.zoom-midX);
+  tlCanvas.style.left=tlScroll.scrollLeft+'px'; tlDraw(); } },{passive:false});
 tlScroll.addEventListener('touchend',()=>{ pinch=null; });
 
 /* ---------------- PWA ---------------- */
