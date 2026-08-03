@@ -1599,7 +1599,7 @@ midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=43;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=44;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -2170,7 +2170,7 @@ function openMenu(cx,cy,t){
   add('▲   Ground effect','ground',false);
   add('T   Text message','text',false);
   tlMenu.style.left=Math.min(cx,window.innerWidth-215)+'px';
-  tlMenu.style.top=Math.max(8,cy-170)+'px';
+  tlMenu.style.top=Math.max(8,cy-42)+'px';
   tlMenu.classList.add('on');
 }
 function createEvent(kind,t){
