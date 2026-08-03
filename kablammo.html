@@ -1599,7 +1599,7 @@ midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=37;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=38;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -2008,9 +2008,19 @@ function hitEvent(ax,y){
 }
 const MOVE_TOL=8;
 let downPt=null, panning=null, movedFar=false, scrubbing=false;
+const activePointers=new Set();   // a 2nd finger landing means a pinch is starting -- see pointerdown below
 
 tlCanvas.addEventListener('pointerdown',ev=>{
   if(ev.button===2) return;
+  activePointers.add(ev.pointerId);
+  if(activePointers.size>1){
+    // a second finger just landed mid-gesture -- this is a pinch starting. Don't touch downPt/panning
+    // for this new pointer (that was the bug: it silently overwrote the shared reference point the
+    // FIRST finger's still-captured pointermove events were using, producing a spurious jump equal to
+    // the distance between the two fingers' touchdown points). Let the pinch handler own it instead.
+    panning=null; downPt=null; scrubbing=false; tlDrag=null;
+    return;
+  }
   const {ax,y}=tlAbs(ev), z=timeline.zoom;
   lastClick={x:ev.clientX,y:ev.clientY}; closeMenu();
   movedFar=false; downPt={ax,y,cx:ev.clientX,cy:ev.clientY};
@@ -2076,6 +2086,7 @@ function autoPan(clientX){
     tlScroll.scrollLeft=Math.max(0,Math.min(maxLeft,tlScroll.scrollLeft+d)); tlCanvas.style.left=tlScroll.scrollLeft+'px'; }
 }
 function endTlPointer(ev){
+  if(ev) activePointers.delete(ev.pointerId);
   panning=null; scrubbing=false;
   if(tlDrag){
     const wasTap=(tlDrag.mode==='pending-move' && !movedFar), e=tlDrag.e;
@@ -2086,7 +2097,8 @@ function endTlPointer(ev){
   downPt=null;
 }
 tlCanvas.addEventListener('pointerup',endTlPointer);
-tlCanvas.addEventListener('pointercancel',()=>{ panning=null; scrubbing=false; tlDrag=null; downPt=null; });
+tlCanvas.addEventListener('pointercancel',ev=>{ activePointers.delete(ev.pointerId);
+  panning=null; scrubbing=false; tlDrag=null; downPt=null; });
 tlScroll.addEventListener('scroll',()=>{ tlCanvas.style.left=tlScroll.scrollLeft+'px';
   tlCanvas.style.top=tlScroll.scrollTop+'px'; tlDraw(); });
 tlScroll.addEventListener('wheel',ev=>{
