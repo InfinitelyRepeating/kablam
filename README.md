@@ -1,4 +1,4 @@
-# kablammo
+# Kablam!
 In-browser fireworks show creation and display
 
 [Open here](https://infinitelyrepeating.github.io/kablammo)
