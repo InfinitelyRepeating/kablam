@@ -3,7 +3,7 @@ In-browser fireworks show creation and display
 
 [Open here](https://infinitelyrepeating.github.io/kablammo)
 
-Kablammo was inspired by The Complete Computer Fireworks Celebration Kit (1985), a neat toy game for the Commodore 64 (published by Activision). It was created 100% through Claude by Antropic. 
+Kablam is inspired by The Complete Computer Fireworks Celebration Kit (1985), a neat toy game for the Commodore 64 (published by Activision). It was created 100% through Claude by Antropic. 
 
 # Casual Instructions
 
