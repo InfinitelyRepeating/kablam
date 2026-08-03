@@ -1599,7 +1599,7 @@ midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=41;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=42;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -2314,7 +2314,12 @@ function openEditor(e,cx,cy){
   tlEdit.appendChild(title);
   const upd=()=>tlRefresh();
 
-  const r0=elRow(tlEdit,'Start'); r0.appendChild(numBox(e.t0,v=>{ e.t0=Math.max(0,v); if(e.t1<=e.t0) e.t1=e.t0+0.2; upd(); }));
+  const r0=elRow(tlEdit,'Start'); r0.appendChild(numBox(e.t0,v=>{
+    const newT0=Math.max(0,v);
+    if(e.kind==='song'){ const dur=e.t1-e.t0; e.t0=newT0; e.t1=newT0+dur; }   // shift both, preserving the song's actual length
+    else { e.t0=newT0; if(e.t1<=e.t0) e.t1=e.t0+0.2; }
+    upd();
+  }));
   const r1=elRow(tlEdit,e.kind==='shell'?'Explode':'End'); r1.appendChild(numBox(e.t1,v=>{ e.t1=Math.max(e.t0+0.1,v); upd(); }));
 
   if(e.kind==='shell'){
