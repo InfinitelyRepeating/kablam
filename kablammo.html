@@ -1599,7 +1599,7 @@ midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=42;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=43;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -2163,15 +2163,12 @@ tlScroll.addEventListener('wheel',ev=>{
 /* ---- create menu ---- */
 function closeMenu(){ tlMenu.classList.remove('on'); }
 function openMenu(cx,cy,t){
-  const hasSong=timeline.events.some(e=>e.kind==='song');
-  const canSong=!!audioPlayer.buf && !hasSong && !anyPlaying();     // song only if one isn't already playing
   tlMenu.innerHTML='';
   const add=(label,kind,dis)=>{ const d=document.createElement('div'); d.className='mi'+(dis?' dis':'');
     d.textContent=label; if(!dis) d.onclick=()=>{ closeMenu(); createEvent(kind,t); }; tlMenu.appendChild(d); };
   add('✷   Shell','shell',false);
   add('▲   Ground effect','ground',false);
   add('T   Text message','text',false);
-  add('♪   Song','song',!canSong);
   tlMenu.style.left=Math.min(cx,window.innerWidth-215)+'px';
   tlMenu.style.top=Math.max(8,cy-170)+'px';
   tlMenu.classList.add('on');
@@ -2356,7 +2353,15 @@ function openEditor(e,cx,cy){
     s.textContent=(e.name||'song')+' · shortening the bar ends the song early'; n.appendChild(s);
   }
   const rd=elRow(tlEdit); const del=document.createElement('button'); del.className='btn'; del.id='eDel'; del.textContent='Delete event';
-  del.onclick=()=>{ timeline.events=timeline.events.filter(x=>x!==e); closeEditor(); tlRefresh(); };
+  del.onclick=()=>{
+    timeline.events=timeline.events.filter(x=>x!==e);
+    // deleting a preset-sourced song event: reset the dropdown so picking that SAME preset again
+    // actually re-triggers loading. A native <select> doesn't fire 'change' when you "reselect" an
+    // option that's already showing selected -- without this, the track stays loaded in memory but
+    // there'd be no way to get its song event back except switching to a different track and back.
+    if(e.kind==='song' && e.trackUrl){ trackSel.value=''; trackSel.classList.remove('on'); }
+    closeEditor(); tlRefresh();
+  };
   const close=document.createElement('button'); close.className='btn'; close.textContent='Close'; close.onclick=closeEditor;
   rd.append(del,close);
 
@@ -2859,7 +2864,11 @@ function saveShow(){
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='kablam-show.json';
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),1500);
 }
-function clearShow(){ timeline.events=[]; closeEditor(); tlStop(); tlRefresh(); }
+function clearShow(){
+  const hadPresetSong=timeline.events.some(e=>e.kind==='song' && e.trackUrl);
+  timeline.events=[]; closeEditor(); tlStop(); tlRefresh();
+  if(hadPresetSong){ trackSel.value=''; trackSel.classList.remove('on'); }   // see the note in del.onclick above
+}
 tlFileBtn.onclick=()=>{
   closeMenu(); tlFileMenu.innerHTML='';
   const n=timeline.events.length;
