@@ -1599,7 +1599,7 @@ midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=45;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=46;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -1986,6 +1986,22 @@ function tlDraw(){
     tlg.fillRect(w-14,TL_RULER_H+2,10,2); tlg.fillRect(w-12,TL_RULER_H+6,6,2); }
 }
 function tlRefresh(){ relayout(); tlResize(); tlDraw(); if(typeof updateRecLabel==='function') updateRecLabel(); }
+/* After a drag ends, relayout() can reassign the dragged event to a lane it was never actually
+   dragged to (lane assignment is overlap-avoidance, not directly tied to where you dragged
+   vertically) -- which could land it outside the currently-scrolled view entirely. On touch, the
+   only way to scroll and find it again is a drag on empty track, which deselects on the way there.
+   Scroll it back into view automatically instead, rather than making the user hunt for it. */
+function ensureSelVisible(){
+  if(!tlSel || tlSel.lane==null) return;
+  const voff=tlScroll.scrollTop, viewH=tlViewH();
+  const y=TL_RULER_H+tlSel.lane*TL_LANE_H-voff;
+  if(y+TL_LANE_H>=TL_RULER_H && y<=viewH) return;      // already visible, matches tlDraw's own lane-culling test
+  const contentH=tlContentH();
+  const target=TL_RULER_H+tlSel.lane*TL_LANE_H-(viewH-TL_LANE_H)/2;   // centered within the viewport
+  tlScroll.scrollTop=Math.max(0,Math.min(Math.max(0,contentH-viewH),target));
+  tlCanvas.style.top=tlScroll.scrollTop+'px';
+  tlDraw();
+}
 function tlOpen(){ tlPanel.classList.remove('collapsed'); tlMinBtn.textContent='▾'; tlMinBtn.classList.add('on'); tlRefresh();
   // a synchronous clientHeight read right after unhiding the panel can still see its old
   // (display:none, height=0) state — the browser hasn't necessarily laid it out yet at this exact
@@ -2136,7 +2152,7 @@ function endTlPointer(ev){
     const wasTap=(tlDrag.mode==='pending-move' && !movedFar), e=tlDrag.e, wasAlreadySelected=tlDrag.alreadySelected;
     tlDrag=null;
     if(wasTap){ if(wasAlreadySelected) openEditor(e, ev?ev.clientX:lastClick.x, ev?ev.clientY:lastClick.y); else hideEditorPanel(); }
-    else tlRefresh();
+    else { tlRefresh(); ensureSelVisible(); }
   }
   downPt=null;
 }
