@@ -838,10 +838,13 @@ const SCENES={
 /* ---------------- LED marquee ---------------- */
 let msgText='', ledCols=null, ledScroll=0, ledDot=9, ledVisCols=40, ledSpeed=0.16;
 function setMessage(t){ msgText=(t||'').trim(); ledCols=msgText?buildLED(msgText):null; ledScroll=0; }
-/* pick a scroll speed so a long message completes at least one full pass within durSec */
+/* pick a scroll speed so a long message completes at least one full pass within durSec -- but never
+   slower than a comfortable minimum pace (0.2 col/frame ~= 2 characters/sec at 60fps). Without a
+   real floor here, a short message on a long event stretched to fill the whole duration crawled at
+   an imperceptible pace; multiple passes on a long event reads better than one glacial one. */
 function setMessageTimed(t,durSec){ setMessage(t);
   if(ledCols && ledCols.length>ledVisCols){ const need=ledCols.length+ledVisCols, frames=Math.max(30,durSec*60);
-    ledSpeed=Math.max(0.05,need/frames); } else ledSpeed=0; }
+    ledSpeed=Math.max(0.2,need/frames); } else ledSpeed=0; }
 const FONT={
 ' ':['.....','.....','.....','.....','.....','.....','.....'],
 'A':['.XXX.','X...X','X...X','XXXXX','X...X','X...X','X...X'],
@@ -1599,7 +1602,7 @@ midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=48;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=49;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -2042,7 +2045,7 @@ function updateAutoPan(clientX){
   if(d && !autoPanRunning){ autoPanRunning=true; requestAnimationFrame(autoPanTick); }
 }
 function autoPanTick(){
-  if(!autoPanDX || (!scrubbing && !(tlDrag&&tlDrag.mode!=='pending-move'))){ autoPanRunning=false; return; }
+  if(!autoPanDX || (!scrubbing && !(tlDrag&&!tlDrag.mode.startsWith('pending-')))){ autoPanRunning=false; return; }
   const maxLeft=Math.max(0, computedDuration()*timeline.zoom - tlScroll.clientWidth);
   tlScroll.scrollLeft=Math.max(0,Math.min(maxLeft,tlScroll.scrollLeft+autoPanDX));
   tlCanvas.style.left=tlScroll.scrollLeft+'px';
@@ -2057,7 +2060,7 @@ const MIN_DUR=0.25;   // minimum event duration, enforced on both edges
 function applyPointerPosition(clientX,clientY){
   const {ax}=tlAbs(clientX,clientY), z=timeline.zoom;
   if(scrubbing){ tlTime=Math.max(0,Math.min(computedDuration(),ax/z)); tlClockEl.textContent=fmtClock(tlTime); return; }
-  if(tlDrag && tlDrag.mode!=='pending-move'){
+  if(tlDrag && !tlDrag.mode.startsWith('pending-')){
     const t=ax/z, e=tlDrag.e;
     if(tlDrag.mode==='move'){ e.t0=Math.max(0,snapT(t-tlDrag.grab)); e.t1=e.t0+tlDrag.dur; }
     else if(tlDrag.mode==='end'){
@@ -2099,16 +2102,15 @@ tlCanvas.addEventListener('pointerdown',ev=>{
     tlClockEl.textContent=fmtClock(tlTime); tlDraw(); return;
   }
   const hit=hitEvent(ax,y);
-
-  // precise handles drag immediately on every device
-  if(hit && (hit.mode==='start'||hit.mode==='end')){
-    tlDrag={...hit, dur:(hit.e.t1||hit.e.t0)-hit.e.t0};
-    tlSel=hit.e; tlCanvas.setPointerCapture(ev.pointerId); tlDraw(); return;
-  }
-  if(hit){                     // body: drag moves it. A plain click/tap only SELECTS -- a 2nd
-                                // click/tap on an event that's ALREADY selected is what opens it.
+  if(hit){          // start/end/body all deferred the same way now: a real DRAG still resizes or
+                     // moves based on which zone it started in, but a plain TAP (no movement) follows
+                     // the same select-then-open logic everywhere -- previously start/end committed to
+                     // a resize immediately on touch-down, so a short, zoomed-out event (where those
+                     // zones can swallow the whole box) had no way to tap it open at all.
     const alreadySelected=(tlSel===hit.e);
-    tlSel=hit.e; tlDrag={e:hit.e,mode:'pending-move',grab:ax/z-hit.e.t0,dur:(hit.e.t1||hit.e.t0)-hit.e.t0,alreadySelected};
+    tlSel=hit.e;
+    tlDrag={e:hit.e, mode:'pending-'+hit.mode, targetMode:hit.mode,
+      grab:ax/z-hit.e.t0, dur:(hit.e.t1||hit.e.t0)-hit.e.t0, alreadySelected};
     tlCanvas.setPointerCapture(ev.pointerId); tlDraw(); return;
   }
   // empty track: drag pans (both axes) on every platform now; a plain click/tap just deselects.
@@ -2139,7 +2141,8 @@ tlCanvas.addEventListener('pointermove',ev=>{
       : (h? ((h.mode==='start'||h.mode==='end')?'ew-resize':'grab') : 'crosshair');
     return; }
 
-  if(tlDrag.mode==='pending-move'){ if(!movedFar) return; tlDrag.mode='move'; closeEditor(); tlSel=tlDrag.e; }
+  if(tlDrag.mode.startsWith('pending-')){ if(!movedFar) return;
+    tlDrag.mode=(tlDrag.targetMode==='body')?'move':tlDrag.targetMode; closeEditor(); tlSel=tlDrag.e; }
 
   applyPointerPosition(ev.clientX,ev.clientY);
   updateAutoPan(ev.clientX);
@@ -2149,7 +2152,7 @@ function endTlPointer(ev){
   if(ev) activePointers.delete(ev.pointerId);
   panning=null; scrubbing=false; autoPanDX=0; autoPanRunning=false;
   if(tlDrag){
-    const wasTap=(tlDrag.mode==='pending-move' && !movedFar), e=tlDrag.e, wasAlreadySelected=tlDrag.alreadySelected;
+    const wasTap=(typeof tlDrag.mode==='string' && tlDrag.mode.startsWith('pending-') && !movedFar), e=tlDrag.e, wasAlreadySelected=tlDrag.alreadySelected;
     tlDrag=null;
     if(wasTap){ if(wasAlreadySelected) openEditor(e, ev?ev.clientX:lastClick.x, ev?ev.clientY:lastClick.y); else hideEditorPanel(); }
     else { tlRefresh(); ensureSelVisible(); }
@@ -2370,7 +2373,7 @@ function openEditor(e,cx,cy){
       sldrLabeled('Radius',0.3,2,0.05,e.rtp.radius,v=>e.rtp.radius=v),
       sldrLabeled('Trails',0,1,0.05,e.rtp.trails,v=>e.rtp.trails=v),
       sldrLabeled('Persist',0.3,2,0.05,e.rtp.persist,v=>e.rtp.persist=v)]);
-    sldrRow(tlEdit,[ sldrLabeled('Position ↔',0.02,0.98,0.005,e.x,v=>{e.x=v;}) ]);
+    sldrRow(tlEdit,[ sldrLabeled('Position',0.02,0.98,0.005,e.x,v=>{e.x=v;}) ]);
   } else if(e.kind==='text'){
     const rt=elRow(tlEdit,'Text'); const i=document.createElement('input'); i.className='num'; i.style.width='150px';
     i.type='text'; i.maxLength=60; i.value=e.text; i.oninput=()=>{ e.text=i.value; }; rt.appendChild(i);
@@ -2424,9 +2427,9 @@ function tlStart(){
   // rather than "resuming" into a spot where there's nothing left to play.
   tlTime = (resumeAt>=showEndTime()+TAIL) ? 0 : resumeAt;
   const songEv=songOnTimeline();
-  timeline.events.forEach(e=>{                       // anything before the resume point already happened
-    const t1=e.t1!=null?e.t1:e.t0+0.6;
-    e._fired = e.t0<=tlTime; e._ended = e._fired && t1<=tlTime;
+  timeline.events.forEach(e=>{                       // anything strictly before the resume point already happened —
+    const t1=e.t1!=null?e.t1:e.t0+0.6;                // an event sitting exactly AT the resume point (t0===tlTime,
+    e._fired = e.t0<tlTime; e._ended = e._fired && t1<=tlTime;   // notably tlTime===0 at a fresh start) hasn't fired yet
     e._rec=false; e._em=null;
   });
   tlPlaying=true; tlPlayBtn.classList.add('on'); tlPlayBtn.textContent='■'; tlPlayBtn.title='Stop show';
