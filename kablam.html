@@ -839,12 +839,13 @@ const SCENES={
 let msgText='', ledCols=null, ledScroll=0, ledDot=9, ledVisCols=40, ledSpeed=0.16;
 function setMessage(t){ msgText=(t||'').trim(); ledCols=msgText?buildLED(msgText):null; ledScroll=0; }
 /* pick a scroll speed so a long message completes at least one full pass within durSec -- but never
-   slower than a comfortable minimum pace (0.2 col/frame ~= 2 characters/sec at 60fps). Without a
-   real floor here, a short message on a long event stretched to fill the whole duration crawled at
-   an imperceptible pace; multiple passes on a long event reads better than one glacial one. */
+   slower than a comfortable minimum pace (0.25 col/frame = 2.5 characters/sec at 60fps, tuned from
+   testing feedback on the original 0.2 value). Without a real floor here, a short message on a long
+   event stretched to fill the whole duration crawled at an imperceptible pace; multiple passes on a
+   long event reads better than one glacial one. */
 function setMessageTimed(t,durSec){ setMessage(t);
   if(ledCols && ledCols.length>ledVisCols){ const need=ledCols.length+ledVisCols, frames=Math.max(30,durSec*60);
-    ledSpeed=Math.max(0.2,need/frames); } else ledSpeed=0; }
+    ledSpeed=Math.max(0.25,need/frames); } else ledSpeed=0; }
 const FONT={
 ' ':['.....','.....','.....','.....','.....','.....','.....'],
 'A':['.XXX.','X...X','X...X','XXXXX','X...X','X...X','X...X'],
@@ -1602,7 +1603,7 @@ midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=49;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=50;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
