@@ -1,10 +1,11 @@
-// Kablammo offline cache.
+// Kablam! offline cache.
 //
-// The app SHELL (the page itself — index.html's redirect + kablammo.html, which is the file that
-// actually changes with every new build) is network-FIRST: always try the network first so a
-// deployed update is visible on the very next load, and only fall back to the cached copy if the
-// network fails (offline). Cache-first for the shell was the bug — once kablammo.html was cached
-// once, it would keep being served forever, since nothing ever told the browser to look again.
+// The app SHELL (the page itself — index.html and kablammo.html's redirects, plus kablam.html,
+// which is the actual app and the file that changes with every new build) is network-FIRST: always
+// try the network first so a deployed update is visible on the very next load, and only fall back to
+// the cached copy if the network fails (offline). Cache-first for the shell was the bug — once the
+// app file was cached once, it would keep being served forever, since nothing ever told the browser
+// to look again.
 //
 // tracks.json (the preset-music manifest) is treated the same way — the live app should always see
 // the freshest track listing when online.
@@ -16,7 +17,7 @@ const C = 'kablammo-v2';   // bump only if you ever need to force a truly clean 
 self.addEventListener('install', e => {
   self.skipWaiting();
   e.waitUntil(
-    caches.open(C).then(c => c.addAll(['./', './index.html']).catch(() => {}))
+    caches.open(C).then(c => c.addAll(['./', './index.html', './kablam.html']).catch(() => {}))
       .then(() => syncMusicCache())     // proactively grab the built-in tracks on first install too
   );
 });
@@ -30,8 +31,8 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   const isShell = e.request.mode === 'navigate' || e.request.url.endsWith('/') ||
-    e.request.url.endsWith('index.html') || e.request.url.endsWith('kablammo.html') ||
-    e.request.url.endsWith('tracks.json');
+    e.request.url.endsWith('index.html') || e.request.url.endsWith('kablam.html') ||
+    e.request.url.endsWith('kablammo.html') || e.request.url.endsWith('tracks.json');
 
   if (isShell) {
     e.respondWith(
