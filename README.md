@@ -1,13 +1,13 @@
 # Kablam!
 In-browser fireworks show creation and display
 
-[Open here](https://infinitelyrepeating.github.io/kablammo)
+[Open here](https://all-no-facts.github.io/kablam)
 
-Kablam is inspired by The Complete Computer Fireworks Celebration Kit (1985), a neat toy game for the Commodore 64 (published by Activision). It was created 100% through Claude by Antropic. 
+Kablam! is inspired by The Complete Computer Fireworks Celebration Kit (1985), a neat toy game for the Commodore 64 (published by Activision). It was created 100% through Claude by Anthropic. 
 
 # Casual Instructions
 
-The much of the display is self-explanatory, and if you don't understand what something does, play with it until you do! Still, here are some helpful tips.
+Much of the display is self-explanatory, and if you don't understand what something does, play with it until you do! Still, here are some helpful tips.
 
 * You have both shells and ground effects. Shells can be launched by clicking in the air. Ground effects can be activated by clicking below the ground line in the scene.
 * The radius/trails/persistence (RTP) sliders affect shells and ground effects differently. In particular, most ground effects will ignore the trails slider, and the radius slider will determine the size of the effect.
@@ -20,11 +20,11 @@ The much of the display is self-explanatory, and if you don't understand what so
 
 The timeline lets you record and play back shows, especially with musical accompaniment. Loaded music will automatically appear at the top of the timeline, shaded by the amount of energy in the song.
 
-The red play head can be positioned by clicking on the ruler. Using the mouse wheel (or pinching) on the ruler will zoom in/out. Pressing play will usually play the show from the play head position, though there is a rewind button, and it will automatically rewind if the play head is more than 2.5 seconds past the last event in the timeline.
+The red play head can be positioned by clicking on the ruler. Using the mouse wheel (or pinching) on the ruler will zoom in/out. Pressing play resumes the show from wherever the play head currently sits; there's also a rewind button, and playback will automatically rewind if the play head is more than 2.5 seconds past the last event in the timeline.
 
-A recorded show consists of a series of events. Events can represent a launched shell, a ground effect, or an LED message. Events are shown as rectangles on the timeline. Events can be added by clicking on the timeline with the mouse, or (on mobile) by positioning the red play head and tapping the "+ Event" button. Events will automatically snap to the nearest quarter second, unless snap-to is turned off.
+A recorded show consists of a series of events. Events can represent a launched shell, a ground effect, or an LED message. Events are shown as rectangles on the timeline. Events can be added with the "+ Event" button (every platform), or by right-clicking on the timeline (desktop). Dragging on the timeline itself pans the view rather than creating anything. Events will automatically snap to the nearest quarter second, unless snap-to is turned off.
 
-Existing events can be modified or removed by clicking on them, though the type of event (music, led, ground effect, etc) can't be changed. You can also drag the left and right sides of an event's rectangle to adjust start/stop/duration.
+A single click or tap on an existing event selects it; click or tap that same event again to open its editor, where it can be modified or removed. (The type of event — shell, ground effect, LED, etc — can't be changed after creation.) You can also drag the left and right sides of an event's rectangle to adjust start/stop/duration, or drag its body to move it in time.
 
 A couple of notes about different kinds of events
 
@@ -40,7 +40,10 @@ Recorded shows with musical accompaniment are given a "Sync Score" to rate how w
 
 Shows can be saved/loaded as JSON.
 
+# Music Credits
 
-
-
-
+* **Stars and Stripes Forever** — U.S. Marine Band (2017), via Wikimedia Commons
+* **1812 Overture** (Finale excerpt) — U.S. Army Band, via archive.org
+* **The Blue Danube** (Waltz/Finale excerpt) — Orchestra Tsumugi, via classicals.de
+* **Ride of the Valkyries** — cond. Philip Milman, via classicals.de
+* **William Tell Overture** (Finale excerpt) — Military Band (2000), via Wikimedia Commons
