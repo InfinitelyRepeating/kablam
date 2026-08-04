@@ -32,7 +32,7 @@ A couple of notes about different kinds of events
 2. If the event is a shell, the right side of the rectangle marks the shell's detonation. A shell's launch velocity is calculated so that it detonates at the right altitude and time.
 3. Aerial shell (and ground effects) have a position attribute to show where on the screen the shell (or effect) appears. The attribute is rescaled to the current resolution, so a show made on a mobile device will look different on a desktop.
 
-While events CAN be manually added one at a time, it's recommended that you use the record button to outline a show. While recording, any loaded music will play, and manually triggered shells and effects will be saved on the timeline as events. Any existing events will play normally, allowing you to add on to existing shows. One the basic time of a show is recorded, it's easier to go back and edit events for precise timing and variety.
+While events CAN be manually added one at a time, it's recommended that you use the record button to outline a show. While recording, any loaded music will play, and manually triggered shells and effects will be saved on the timeline as events. Any existing events will play normally, allowing you to add on to existing shows. Once the basic timing of a show is recorded, it's easier to go back and edit events for precise timing and variety.
 
 Recorded shows with musical accompaniment are given a "Sync Score" to rate how well the show goes with the music. Shows are graded on beat matching, energy matching, dynamics matching (eg. ebb and flow of music), variety of effects/positions/rtp values, and the climax of the song. Clicking the "sync" button will bring up your score, along with tips for improving it. Note that for shells, the sync score likes it when shells detonate on beat, but will award partial credit for launching on beat. The scoring system gets more rigorous as the scores get higher. A few minutes of effort is usually enough for a score in the 50s or 60s. Getting a score in the 90s takes more work.
 
@@ -41,7 +41,7 @@ Shows can be saved/loaded as JSON.
 # Music Credits
 
 * **[Stars and Stripes Forever](https://commons.wikimedia.org/wiki/File:Sousa's_%22The_Stars_and_Stripes_Forever%22_-_United_States_Marine_Band_(2017).ogg)** — U.S. Marine Band (2017), via Wikimedia Commons
-* **[1812 Overture](https://archive.org/details/1812Overture)** (Finale excerpt) — U.S. Army Band, via archive.org
-* **[The Blue Danube](https://www.classicals.de/strauss-2-blue-danube)** (Waltz/Finale excerpt) — Orchestra Tsumugi, via classicals.de
+* **[1812 Overture](https://archive.org/details/1812Overture)** (Finale excerpted from original) — U.S. Army Band, via archive.org
+* **[The Blue Danube](https://www.classicals.de/strauss-2-blue-danube)** (Waltz/Finale excerpted from original) — Orchestra Tsumugi, via classicals.de
 * **[Ride of the Valkyries](https://www.classicals.de/wagner-valkyrie)** — cond. Philip Milman, via classicals.de
-* **[William Tell Overture](https://commons.wikimedia.org/wiki/File:Gioachino_Rossini,_William_Tell_Overture_(military_band_version,_2000).ogg)** (Finale excerpt) — Military Band (2000), via Wikimedia Commons
+* **[William Tell Overture](https://commons.wikimedia.org/wiki/File:Gioachino_Rossini,_William_Tell_Overture_(military_band_version,_2000).ogg)** (Finale excerpted from original) — U.S. Marine Band (2000), via Wikimedia Commons
