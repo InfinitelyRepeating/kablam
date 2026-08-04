@@ -32,11 +32,9 @@ A couple of notes about different kinds of events
 2. If the event is a shell, the right side of the rectangle marks the shell's detonation. A shell's launch velocity is calculated so that it detonates at the right altitude and time.
 3. Aerial shell (and ground effects) have a position attribute to show where on the screen the shell (or effect) appears. The attribute is rescaled to the current resolution, so a show made on a mobile device will look different on a desktop.
 
-While events CAN be manually added one at a time, it's recommended that you use the record button to outline a show. While recording, any loaded music will play, and manually triggered shells and effects will be saved on the timeline as events. Any existing events will play normally, allowing you to add on to existing shows.
+While events CAN be manually added one at a time, it's recommended that you use the record button to outline a show. While recording, any loaded music will play, and manually triggered shells and effects will be saved on the timeline as events. Any existing events will play normally, allowing you to add on to existing shows. One the basic time of a show is recorded, it's easier to go back and edit events for precise timing and variety.
 
-You can use the record button to "outline" a show, and then manually revise the events for timing and variety.
-
-Recorded shows with musical accompaniment are given a "Sync Score" to rate how well the show goes with the music. Shows are graded on beat matching, energy matching, dynamics matching (eg. ebb and flow of music), variety of effects/positions/rtp values, and the climax of the song. Clicking the "sync" button will bring up your score, along with tips for improving it. Note that for shells, the sync score likes it when shells detonate on beat, but will award partial credit for launching on beat.
+Recorded shows with musical accompaniment are given a "Sync Score" to rate how well the show goes with the music. Shows are graded on beat matching, energy matching, dynamics matching (eg. ebb and flow of music), variety of effects/positions/rtp values, and the climax of the song. Clicking the "sync" button will bring up your score, along with tips for improving it. Note that for shells, the sync score likes it when shells detonate on beat, but will award partial credit for launching on beat. The scoring system gets more rigorous as the scores get higher. A few minutes of effort is usually enough for a score in the 50s or 60s. Getting a score in the 90s takes more work.
 
 Shows can be saved/loaded as JSON.
 
