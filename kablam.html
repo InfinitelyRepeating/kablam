@@ -1599,7 +1599,7 @@ midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=47;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=48;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -2911,7 +2911,7 @@ tlFileBtn.onclick=()=>{
     d.dataset.armed='1'; d.textContent='🗑   Clear — tap again';
   };
   tlFileMenu.appendChild(d);
-  add('ℹ️   About Kablam!…', ()=>window.open('https://github.com/InfinitelyRepeating/kablam','_blank','noopener'), false);
+  add('ℹ️   About Kablam!…', ()=>window.open('https://github.com/all-no-facts/kablam','_blank','noopener'), false);
   const r=tlFileBtn.getBoundingClientRect();
   tlFileMenu.classList.add('on');
   const mw=tlFileMenu.offsetWidth||210, mh=tlFileMenu.offsetHeight||140;
