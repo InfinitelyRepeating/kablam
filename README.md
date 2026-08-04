@@ -41,7 +41,7 @@ Shows can be saved/loaded as JSON.
 # Music Credits
 
 * **[Stars and Stripes Forever](https://commons.wikimedia.org/wiki/File:Sousa's_%22The_Stars_and_Stripes_Forever%22_-_United_States_Marine_Band_(2017).ogg)** — U.S. Marine Band (2017), via Wikimedia Commons
-* **[1812 Overture](https://archive.org/details/1812Overture)** (Finale excerpted from original) — U.S. Army Band, via archive.org
+* **[1812 Overture](https://archive.org/details/1812Overture)** (Finale excerpted from original) — U.S. Army Band (2005), via archive.org
 * **[The Blue Danube](https://www.classicals.de/strauss-2-blue-danube)** (Waltz/Finale excerpted from original) — Orchestra Tsumugi, via classicals.de
 * **[Ride of the Valkyries](https://www.classicals.de/wagner-valkyrie)** — cond. Philip Milman, via classicals.de
 * **[William Tell Overture](https://commons.wikimedia.org/wiki/File:Gioachino_Rossini,_William_Tell_Overture_(military_band_version,_2000).ogg)** (Finale excerpted from original) — U.S. Marine Band (2000), via Wikimedia Commons
