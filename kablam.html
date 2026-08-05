@@ -511,19 +511,15 @@ const groundParams={
    Later a shell can be handed [c1,c2,...] plus a distribution rule
    (by index, by ring, by radius) with zero change to the geometry. */
 /* ---- show design-space ----
-   Positions are authored in a fixed 16:9 frame and contain-fitted into whatever sky
-   the device has. Same composition on a phone, a laptop, or an ultrawide. */
-const SHOW_ASPECT=16/9;
-function showRect(){
-  const sw=W, sh=horizonY;
-  let w=sw, h=sw/SHOW_ASPECT;
-  if(h>sh){ h=sh; w=sh*SHOW_ASPECT; }        // contain-fit
-  return {x:(sw-w)/2, y:(sh-h)/2, w, h};
-}
-const showX=fx=>{ const r=showRect(); return r.x+fx*r.w; };
-const showY=fy=>{ const r=showRect(); return r.y+fy*r.h; };
-const unShowX=px=>{ const r=showRect(); return Math.max(0,Math.min(1,(px-r.x)/r.w)); };   // screen -> design-space, clamped —
-const unShowY=py=>{ const r=showRect(); return Math.max(0,Math.min(1,(py-r.y)/r.h)); };   // a live click outside the fixed 16:9 composition area (e.g. the wide margins on a portrait phone) has nowhere valid to map to but the nearest edge
+   Positions are relative to the CURRENT device's own viewport, not a fixed reference frame.
+   (0,0) = bottom-left (left edge, waterline). (1,1) = top-right (right edge, top of the sky).
+   A show authored on one aspect ratio will look proportionally different on another (a deliberate
+   tradeoff -- no more mismatch between what you set and what plays back, at the cost of literal
+   cross-device identical composition). */
+function showX(fx){ return fx*W; }                              // 0 = left edge, 1 = right edge
+function showY(fy){ return horizonY*(1-fy); }                    // 0 = waterline, 1 = top of the sky
+function unShowX(px){ return Math.max(0,Math.min(1,px/Math.max(1,W))); }
+function unShowY(py){ return Math.max(0,Math.min(1,1-py/Math.max(1,horizonY))); }
 
 function paletteFor(name){ return name==='multi' ? null : [COLORS[name]||COLORS.gold]; }
 function copyCustom(cs){ return cs ? {shells:cs.shells.map(s=>({base:s.base,cuts:s.cuts.map(c=>({...c})),
@@ -1603,7 +1599,7 @@ midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=51;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=52;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -2238,19 +2234,18 @@ function sldrLabeled(label,min,max,step,val,cb){ const l=document.createElement(
 function sldrRow(parent,items){ const r=document.createElement('div'); r.className='erow sldrow';
   items.forEach(x=>r.appendChild(x)); parent.appendChild(r); return r; }
 
-/* Position pad. The box is ALWAYS the same fixed SHOW_ASPECT (16:9) the renderer itself uses via
-   showRect() -- not the device's own sky shape. This used to draw a box matching the DEVICE's
-   aspect instead (tall on phone, wide on desktop), on the assumption that storage was independent
-   of the pad's shape -- it isn't: showRect() always contain-fits a FIXED 16:9 frame regardless of
-   device, so a device-shaped pad let you tap "95%" that actually rendered nowhere near 95% once
-   contain-fit kicked in. Matching the pad to the same fixed frame the renderer uses is what makes
-   the number you see while placing something the number you actually get during playback. */
+/* Position pad. The box matches the DEVICE's own sky aspect ratio (tall on phone, wide on
+   desktop) -- this is now correct, since the renderer maps positions against the same full
+   device viewport the pad represents, rather than a fixed reference frame. What you see in
+   the pad is what you get in playback, on every device, because they finally agree on what
+   "0 to 1" means: the pad's own box IS the sky. */
 function makePosPad(e,onChange){
   const wrap=document.createElement('div'); wrap.className='padwrap';
   const pad=document.createElement('canvas'); pad.className='pad';
-  const PW=340, PH=Math.round(PW/SHOW_ASPECT);
+  const skyAspect=Math.max(0.45,Math.min(3,(W||16)/(horizonY||9)));
+  const PW=340, PH=Math.round(PW/skyAspect);
   pad.width=PW; pad.height=PH;
-  pad.style.aspectRatio=SHOW_ASPECT.toFixed(4);
+  pad.style.aspectRatio=skyAspect.toFixed(4);
   const cap=document.createElement('div'); cap.className='padcap';
   wrap.append(pad,cap);
 
@@ -2276,8 +2271,8 @@ function makePosPad(e,onChange){
       g.beginPath(); g.moveTo(PW*i/3,0); g.lineTo(PW*i/3,PH); g.stroke();
       g.beginPath(); g.moveTo(0,PH*i/3); g.lineTo(PW,PH*i/3); g.stroke();
     }
-    g.fillStyle='rgba(120,140,200,0.20)'; g.fillRect(0,PH-7,PW,7);   // horizon
-    const px=x=>x*PW, py=y=>y*PH;                                    // full box == full 0..1 range
+    g.fillStyle='rgba(120,140,200,0.20)'; g.fillRect(0,PH-7,PW,7);   // horizon sits at the bottom —
+    const px=x=>x*PW, py=y=>(1-y)*PH;                                // matches y=0 (waterline) drawing there too
     const cross=(cx,cy,col,r,lw)=>{ g.strokeStyle=col; g.lineWidth=lw;
       g.beginPath(); g.moveTo(cx-r,cy); g.lineTo(cx+r,cy); g.moveTo(cx,cy-r); g.lineTo(cx,cy+r); g.stroke();
       g.beginPath(); g.arc(cx,cy,r*0.55,0,6.283); g.stroke(); };
@@ -2295,13 +2290,13 @@ function makePosPad(e,onChange){
     cross(px(e.x),py(e.y),`rgb(${c[0]},${c[1]},${c[2]})`,10,1.5);
     g.textAlign='left';
     const n=others.length;
-    cap.textContent=`x ${(e.x*100).toFixed(0)}%  ·  y ${((1-e.y)*100).toFixed(0)}%`
+    cap.textContent=`x ${(e.x*100).toFixed(0)}%  ·  y ${(e.y*100).toFixed(0)}%`
       +(n?`  ·  ${n} other shell${n>1?'s':''} in the air (numbered by burst order)`:'');
   }
   pad.addEventListener('pointerdown',ev=>{                 // tap anywhere in the box to place
     const r=pad.getBoundingClientRect();
     e.x=Math.max(0.02,Math.min(0.98,(ev.clientX-r.left)/r.width));
-    e.y=Math.max(0.05,Math.min(0.95,(ev.clientY-r.top)/r.height));
+    e.y=Math.max(0.05,Math.min(0.95,1-(ev.clientY-r.top)/r.height));   // top of the pad -> y near 1
     draw(); if(onChange) onChange();
   });
   draw();
@@ -2362,7 +2357,7 @@ function openEditor(e,cx,cy){
       sldrLabeled('Trails',0,2,0.05,e.params.trails,v=>e.params.trails=v),
       sldrLabeled('Persist',0.3,2,0.05,e.params.persist,v=>e.params.persist=v)]);
     const rpos=elRow(tlEdit,'Place'); const pb=document.createElement('button'); pb.className='btn';
-    const posLabel=()=>`✛ Set position  ·  ${(e.x*100).toFixed(0)}%, ${((1-e.y)*100).toFixed(0)}%`;   // y shown sky-up
+    const posLabel=()=>`✛ Set position  ·  ${(e.x*100).toFixed(0)}%, ${(e.y*100).toFixed(0)}%`;
     pb.textContent=posLabel();
     pb.onclick=()=>openPosDialog(e,()=>{ pb.textContent=posLabel(); });   // pad lives behind this button
     rpos.appendChild(pb);
@@ -2717,8 +2712,8 @@ function scoreShow(){
      a shell-only show isn't penalized twice for having no ground-effect variety to speak of.
      Position variety only counts spread WITHIN a sensible on-screen area — ground level and the
      screen edges aren't "more variety," they're the show going somewhere it shouldn't. */
-  const POS_X=[0.05,0.95], POS_Y=[0.15,0.95];
-  const inSafeZone=e=>{ const x=e.x??0.5, y=(e.kind==='shell')?(e.y??0.5):1;
+  const POS_X=[0.05,0.95], POS_Y=[0.05,0.85];    // mirrored from the old [0.15,0.95] for the flipped Y axis —
+  const inSafeZone=e=>{ const x=e.x??0.5, y=(e.kind==='shell')?(e.y??0.5):0;   // same intent: avoid ground level and the very top edge
     return x>=POS_X[0]&&x<=POS_X[1]&&(e.kind!=='shell'||(y>=POS_Y[0]&&y<=POS_Y[1])); };
   const pyro=[...shells,...grounds];
   const offScreenCount=pyro.filter(e=>!inSafeZone(e)).length;
