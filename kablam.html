@@ -522,8 +522,8 @@ function showRect(){
 }
 const showX=fx=>{ const r=showRect(); return r.x+fx*r.w; };
 const showY=fy=>{ const r=showRect(); return r.y+fy*r.h; };
-const unShowX=px=>{ const r=showRect(); return (px-r.x)/r.w; };   // screen -> design-space
-const unShowY=py=>{ const r=showRect(); return (py-r.y)/r.h; };
+const unShowX=px=>{ const r=showRect(); return Math.max(0,Math.min(1,(px-r.x)/r.w)); };   // screen -> design-space, clamped —
+const unShowY=py=>{ const r=showRect(); return Math.max(0,Math.min(1,(py-r.y)/r.h)); };   // a live click outside the fixed 16:9 composition area (e.g. the wide margins on a portrait phone) has nowhere valid to map to but the nearest edge
 
 function paletteFor(name){ return name==='multi' ? null : [COLORS[name]||COLORS.gold]; }
 function copyCustom(cs){ return cs ? {shells:cs.shells.map(s=>({base:s.base,cuts:s.cuts.map(c=>({...c})),
@@ -1603,7 +1603,7 @@ midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=50;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=51;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -2238,16 +2238,19 @@ function sldrLabeled(label,min,max,step,val,cb){ const l=document.createElement(
 function sldrRow(parent,items){ const r=document.createElement('div'); r.className='erow sldrow';
   items.forEach(x=>r.appendChild(x)); parent.appendChild(r); return r; }
 
-/* Position pad. Storage is unchanged — x/y are still 0..1 in the saved design frame — but the
-   box itself is drawn in the DEVICE's current orientation, and the whole box is the placement
-   area. Tall phone -> tall box; laptop -> wide box. */
+/* Position pad. The box is ALWAYS the same fixed SHOW_ASPECT (16:9) the renderer itself uses via
+   showRect() -- not the device's own sky shape. This used to draw a box matching the DEVICE's
+   aspect instead (tall on phone, wide on desktop), on the assumption that storage was independent
+   of the pad's shape -- it isn't: showRect() always contain-fits a FIXED 16:9 frame regardless of
+   device, so a device-shaped pad let you tap "95%" that actually rendered nowhere near 95% once
+   contain-fit kicked in. Matching the pad to the same fixed frame the renderer uses is what makes
+   the number you see while placing something the number you actually get during playback. */
 function makePosPad(e,onChange){
   const wrap=document.createElement('div'); wrap.className='padwrap';
   const pad=document.createElement('canvas'); pad.className='pad';
-  const skyAspect=Math.max(0.45,Math.min(3,(W||16)/(horizonY||9)));   // the device's actual sky
-  const PW=340, PH=Math.round(PW/skyAspect);
+  const PW=340, PH=Math.round(PW/SHOW_ASPECT);
   pad.width=PW; pad.height=PH;
-  pad.style.aspectRatio=skyAspect.toFixed(4);
+  pad.style.aspectRatio=SHOW_ASPECT.toFixed(4);
   const cap=document.createElement('div'); cap.className='padcap';
   wrap.append(pad,cap);
 
