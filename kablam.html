@@ -1599,7 +1599,7 @@ midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=52;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=53;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -1873,7 +1873,7 @@ const tlg=tlCanvas.getContext('2d');
 const tlMenu=document.getElementById('tlMenu'), tlEdit=document.getElementById('tlEdit');
 const tlPlayBtn=document.getElementById('tlPlay'), tlRecBtn=document.getElementById('tlRec'),
   tlRewindBtn=document.getElementById('tlRewind');
-const tlSnapBtn=document.getElementById('tlSnap'), tlMinBtn=document.getElementById('tlMin');
+const tlSnapBtn=document.getElementById('tlSnap'), tlMinBtn=document.getElementById('tlMin'), tlScoreBtn=document.getElementById('tlScore');
 const tlLenEl=document.getElementById('tlLen'), tlClockEl=document.getElementById('tlClock');
 let tlSel=null, tlDrag=null, tlPlaying=false, tlTime=0, tlLanes=TL_MIN_LANES, songName='song';
 let lastClick={x:0,y:0};
@@ -2506,7 +2506,10 @@ function tlRecordStart(){
   // existing events replay as the playhead reaches them, so recording layers onto the current show
   timeline.events.forEach(e=>{ e._fired=false; e._ended=false; e._rec=false; e._em=null; });
   const begin=()=>{ recording=true; recT0=performance.now();
-    tlRecBtn.classList.add('on'); tlRewindBtn.disabled=true; updateRecLabel(); tlOpen(); };
+    tlRecBtn.classList.add('on');
+    tlRewindBtn.disabled=true; tlPlayBtn.disabled=true; tlAddBtn.disabled=true;
+    tlSnapBtn.disabled=true; tlScoreBtn.disabled=true; tlFileBtn.disabled=true;
+    updateRecLabel(); tlOpen(); };
   if(songEv && audioPlayer.buf){
     audioPlayer.offset=0;
     audioPlayer.play({loop:false});                   // starts inside the gesture — what iOS requires
@@ -2515,7 +2518,10 @@ function tlRecordStart(){
   begin();
 }
 function tlRecordStop(){
-  recording=false; tlRecBtn.classList.remove('on'); tlRewindBtn.disabled=false; updateRecLabel();
+  recording=false; tlRecBtn.classList.remove('on');
+  tlRewindBtn.disabled=false; tlPlayBtn.disabled=false; tlAddBtn.disabled=false;
+  tlSnapBtn.disabled=false; tlScoreBtn.disabled=false; tlFileBtn.disabled=false;
+  updateRecLabel();
   audioPlayer.stop(); updatePlayUI();
   timeline.events.forEach(e=>{ if(e.kind==='shell' && e.t1==null) e.t1=e.t0+1.2;   // never exploded
     e._rec=false; if(e._em&&e._em.life!==undefined) e._em.life=0; e._em=null; });   // clear transient state
@@ -2805,7 +2811,7 @@ function scoreShow(){
 }
 /* ---- sync score UI ---- */
 const scoreOverlay=document.getElementById('scoreOverlay'), scoreDlg=document.getElementById('scoreDlg');
-document.getElementById('tlScore').onclick=()=>{
+tlScoreBtn.onclick=()=>{
   const s=scoreShow();
   scoreDlg.innerHTML='';
   const h=document.createElement('div'); h.className='bhead'; h.textContent='◎ SYNC SCORE';
