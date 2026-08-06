@@ -1600,7 +1600,7 @@ midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=56;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=57;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -2107,6 +2107,7 @@ tlCanvas.addEventListener('pointerdown',ev=>{
   lastClick={x:ev.clientX,y:ev.clientY}; closeMenu();
   movedFar=false; downPt={ax,y,cx:ev.clientX,cy:ev.clientY};
   if(y<TL_RULER_H){                                  // ruler: press and drag to scrub
+    if(tlPlaying) return;                            // no scrubbing mid-playback for now -- shells don't re-fire on a second pass (see future-features)
     scrubbing=true; tlCanvas.setPointerCapture(ev.pointerId);
     tlTime=Math.max(0,Math.min(computedDuration(),ax/z));
     tlClockEl.textContent=fmtClock(tlTime); tlDraw(); return;
@@ -2448,6 +2449,7 @@ function tlStart(){
   tlPlaying=true; tlPlayBtn.classList.add('on'); tlPlayBtn.textContent='■'; tlPlayBtn.title='Stop show';
   closeEditor();   // no editing while playing -- don't leave an already-open editor's fields live
   tlFileBtn.disabled=true; tlRewindBtn.disabled=true; closeFileMenu();  // no editing the saved show out from under a running one
+  tlAddBtn.disabled=true; tlSnapBtn.disabled=true; tlScoreBtn.disabled=true; tlRecBtn.disabled=true;  // only play/pause + show-hide stay active during playback
   if(songEv && audioPlayer.buf && songEv.t0<=tlTime && tlTime<(songEv.t1!=null?songEv.t1:songEv.t0+audioPlayer.dur)){
     audioPlayer.offset=Math.max(0,tlTime-songEv.t0);   // resuming into the middle of the song — seek to match
     audioPlayer.play({loop:false}); updatePlayUI();
@@ -2456,6 +2458,7 @@ function tlStart(){
 function tlStop(){
   tlPlaying=false; tlPlayBtn.classList.remove('on'); tlPlayBtn.textContent='▶'; tlPlayBtn.title='Play show';
   tlFileBtn.disabled=false; tlRewindBtn.disabled=false;
+  tlAddBtn.disabled=false; tlSnapBtn.disabled=false; tlScoreBtn.disabled=false; tlRecBtn.disabled=false;
   audioPlayer.stop(); setMessage(''); ledSpeed=0.16; updatePlayUI();
   timeline.events.forEach(e=>{ if(e._em && e._em.life!==undefined) e._em.life=0; e._em=null; });
 }
