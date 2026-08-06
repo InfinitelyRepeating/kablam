@@ -1600,7 +1600,7 @@ midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=55;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=56;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -2117,6 +2117,7 @@ tlCanvas.addEventListener('pointerdown',ev=>{
                      // the same select-then-open logic everywhere -- previously start/end committed to
                      // a resize immediately on touch-down, so a short, zoomed-out event (where those
                      // zones can swallow the whole box) had no way to tap it open at all.
+    if(tlPlaying) return;   // no editing while playing -- consumes the click, doesn't fall through to pan/deselect either
     const alreadySelected=(tlSel===hit.e);
     tlSel=hit.e;
     tlDrag={e:hit.e, mode:'pending-'+hit.mode, targetMode:hit.mode,
@@ -2148,7 +2149,7 @@ tlCanvas.addEventListener('pointermove',ev=>{
 
   if(!tlDrag){ const h=hitEvent(ax,y);
     tlCanvas.style.cursor = y<TL_RULER_H?'ew-resize'
-      : (h? ((h.mode==='start'||h.mode==='end')?'ew-resize':'grab') : 'crosshair');
+      : (h && !tlPlaying ? ((h.mode==='start'||h.mode==='end')?'ew-resize':'grab') : 'crosshair');
     return; }
 
   if(tlDrag.mode.startsWith('pending-')){ if(!movedFar) return;
@@ -2445,6 +2446,7 @@ function tlStart(){
     e._rec=false; e._em=null;
   });
   tlPlaying=true; tlPlayBtn.classList.add('on'); tlPlayBtn.textContent='■'; tlPlayBtn.title='Stop show';
+  closeEditor();   // no editing while playing -- don't leave an already-open editor's fields live
   tlFileBtn.disabled=true; tlRewindBtn.disabled=true; closeFileMenu();  // no editing the saved show out from under a running one
   if(songEv && audioPlayer.buf && songEv.t0<=tlTime && tlTime<(songEv.t1!=null?songEv.t1:songEv.t0+audioPlayer.dur)){
     audioPlayer.offset=Math.max(0,tlTime-songEv.t0);   // resuming into the middle of the song — seek to match
