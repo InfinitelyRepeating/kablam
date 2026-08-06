@@ -361,7 +361,7 @@
       <button class="btn" id="tlScore" title="Score how well the show matches the music">◎ Sync</button>
       <span class="spacer"></span>
       <span class="bnote" id="tlClock">0:00.0</span>
-      <span class="lbl" title="How far the timeline currently extends">Length</span>
+      <span class="lbl" id="tlLenLbl" title="How far the timeline currently extends">Length</span>
       <span class="bnote" id="tlLen">5:00</span>
       <button class="btn" id="tlFile" title="Save, load or clear the show">📁</button>
     </div>
@@ -1599,7 +1599,7 @@ midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=53;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=54;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -1874,7 +1874,7 @@ const tlMenu=document.getElementById('tlMenu'), tlEdit=document.getElementById('
 const tlPlayBtn=document.getElementById('tlPlay'), tlRecBtn=document.getElementById('tlRec'),
   tlRewindBtn=document.getElementById('tlRewind');
 const tlSnapBtn=document.getElementById('tlSnap'), tlMinBtn=document.getElementById('tlMin'), tlScoreBtn=document.getElementById('tlScore');
-const tlLenEl=document.getElementById('tlLen'), tlClockEl=document.getElementById('tlClock');
+const tlLenEl=document.getElementById('tlLen'), tlClockEl=document.getElementById('tlClock'), tlLenLbl=document.getElementById('tlLenLbl');
 let tlSel=null, tlDrag=null, tlPlaying=false, tlTime=0, tlLanes=TL_MIN_LANES, songName='song';
 let lastClick={x:0,y:0};
 
@@ -1928,6 +1928,18 @@ function tlResize(){
   if(tlScroll.scrollTop>maxTop) tlScroll.scrollTop=maxTop;   // events deleted -> don't strand the view
   tlCanvas.style.top=tlScroll.scrollTop+'px';
   tlLenEl.textContent=fmtTime(computedDuration());
+  updateLenVisibility();
+}
+/* On a narrow screen, a long "Length" value (an 8+ minute show reads like "12:34") can push the
+   file menu button past the visible edge -- technically still reachable by scrolling the toolbar,
+   but easy to miss entirely. Hide the Length label+value first, before that happens, so the file
+   button stays visible without needing to scroll for it. */
+function updateLenVisibility(){
+  const tlbar=tlLenEl.closest('.tlbar'); if(!tlbar) return;
+  tlLenLbl.style.display=''; tlLenEl.style.display='';           // measure with it showing, honestly
+  if(tlbar.scrollWidth>tlbar.clientWidth+1){
+    tlLenLbl.style.display='none'; tlLenEl.style.display='none';
+  }
 }
 function drawEvent(e,off,voff,w,vh){
   const z=timeline.zoom, t1=(e.t1==null?e.t0+0.6:e.t1);
