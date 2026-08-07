@@ -1239,8 +1239,12 @@ document.addEventListener('visibilitychange',()=>{
   const caughtUpTime=songEv.t0+(AC.currentTime-audioPlayer.startedAt);
   if(!(caughtUpTime>tlTime)) return;                 // nothing to catch up to
   timeline.events.forEach(e=>{
-    if(e._fired && !e._ended){ tlEndEvent(e); e._ended=true; }          // clean up anything left mid-flight
-    if(!e._fired && e.t0<caughtUpTime){ e._fired=true; e._ended=true; } // skip anything whose moment already passed
+    if(e.kind==='song'){                                               // the song's own fired-but-not-ended state is
+      if(e._fired && !e._ended && e.t1!=null && caughtUpTime>=e.t1){ tlEndEvent(e); e._ended=true; }  // normal for its
+      return;                                                          // whole duration -- only stop it if the catch-up
+    }                                                                  // actually passed its own scheduled end, same as
+    if(e._fired && !e._ended){ tlEndEvent(e); e._ended=true; }         // a manually-shortened song ending early already
+    if(!e._fired && e.t0<caughtUpTime){ e._fired=true; e._ended=true; } // works during normal playback
   });
   tlTime=caughtUpTime;
   tlClockEl.textContent=fmtClock(tlTime); tlFollowPlayhead(); tlDraw();
@@ -1539,7 +1543,7 @@ audioFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=64;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=65;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
