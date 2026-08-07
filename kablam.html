@@ -1543,7 +1543,7 @@ audioFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=70;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=71;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -1893,27 +1893,29 @@ function drawEvent(e,off,voff,w,vh){
   if(y+hh<=TL_RULER_H || y>=vh) return;               // scrolled under the ruler or past the bottom
   if(e.kind==='song' && analysis){                                   // energy-colored song bar + beat/dynamics ticks
     const n=analysis.energy.length, dur=analysis.duration||1, xa=Math.max(0,x0), xb=Math.min(w,x0+wid);
-    const barH=hh-8, tickY=y+barH+1, tickBandH=hh-barH-1;             // redistribute the lane's existing height —
-    for(let x=xa;x<xb;x++){ const tSec=(x-x0)/z;                      // no change to lane height itself, just how
-      if(tSec<0||tSec>=dur) continue;                                  // past the song's actual end: nothing to draw, not squished
+    const barH=hh-8, tickBase=y+hh;                                    // ticks anchor at the LANE's bottom now, not a
+    for(let x=xa;x<xb;x++){ const tSec=(x-x0)/z;                       // separate small band -- tall ones deliberately
+      if(tSec<0||tSec>=dur) continue;                                  // reach up into the color bar and paint over it
       const frac=tSec/dur, v=analysis.energy[Math.min(n-1,Math.max(0,Math.floor(frac*n)))]||0;
       tlg.fillStyle=`hsl(${210-v*210},85%,${20+v*34}%)`; tlg.fillRect(x,y,1.6,barH); }
     const ticks=getBeatTicks();
     if(ticks){
-      const tickW=Math.max(1,Math.min(3.2,z/45));           // 1x at low/default zoom (matches Build 69 exactly),
-      tlg.fillStyle='rgba(150,185,220,0.8)';                 // widening as you zoom in where there's actually room —
+      const tickW=Math.max(1,Math.min(3.2,z/45));           // 1x at low/default zoom, widening as you zoom in
+      tlg.fillStyle='rgba(150,185,220,0.8)';                 // dynamics: rate of energy change, not beats —
       for(const dt of ticks.dynamicsTicks){ if(dt.t>=dur) continue;    // tall where the music is swelling or dropping,
         const dx=x0+dt.t*z; if(dx<xa-1||dx>xb+1) continue;             // flat where it's holding steady
-        const dh=Math.max(1.5,tickBandH*0.8*dt.d);
-        tlg.fillRect(dx,tickY+tickBandH-dh,1.3*tickW,dh); }
+        const dh=Math.max(2,hh*0.55*dt.d);
+        tlg.fillRect(dx,tickBase-dh,1.3*tickW,dh); }
       for(const a of ticks.thinned){ if(a.t>=dur) continue;            // the full steady beat grid — every tempo-
         const ax=x0+a.t*z; if(ax<xa-1||ax>xb+1) continue;              // thinned beat, not just the required ones
         if(ticks.requiredTs.has(a.t)){                                 // required: what the scorer actually checks —
+          const rh=Math.max(5,hh*(0.5+0.45*a.s));
           tlg.fillStyle='rgba(255,190,90,0.95)';                       // drawn taller and brighter, standing out
-          tlg.fillRect(ax,tickY,1.8*tickW,Math.max(3,tickBandH*(0.55+0.45*a.s)));
+          tlg.fillRect(ax,tickBase-rh,1.8*tickW,rh);
         } else {                                                       // present but secondary — still reads as
+          const sh=Math.max(3,hh*0.55);
           tlg.fillStyle='rgba(255,179,71,0.4)';                        // "a beat," just not one you're required to hit
-          tlg.fillRect(ax,tickY,1.3*tickW,Math.max(1.5,tickBandH*0.35));
+          tlg.fillRect(ax,tickBase-sh,1.3*tickW,sh);
         }
       }
     }
