@@ -34,7 +34,17 @@ A couple of notes about different kinds of events
 
 While events CAN be manually added one at a time, it's recommended that you use the record button to outline a show. While recording, any loaded music will play, and manually triggered shells and effects will be saved on the timeline as events. Any existing events will play normally, allowing you to add on to existing shows. Once the basic timing of a show is recorded, it's easier to go back and edit events for precise timing and variety.
 
-Recorded shows with musical accompaniment are given a "Sync Score" to rate how well the show goes with the music. Shows are graded on beat matching, energy matching, dynamics matching (eg. ebb and flow of music), variety of effects/positions/rtp values, and the climax of the song. Clicking the "sync" button will bring up your score, along with tips for improving it. Note that for shells, the sync score likes it when shells detonate on beat, but will award partial credit for launching on beat. The scoring system gets more rigorous as the scores get higher. A few minutes of effort is usually enough for a score in the 50s or 60s. Getting a score in the 90s takes more work.
+## Sync Score
+
+Recorded shows with musical accompaniment get a "Sync Score" — click the "sync" button to see it, along with specific tips for improving it. It's graded on five things:
+
+* **Accent sync** — do your shells burst *right when the music hits*? Loud drum hits, cymbal crashes, orchestral stabs — the app listens to the actual track and finds these moments on its own. You don't need to be frame-perfect; landing close still counts, it just tapers off the further away you are. A shell's *launch* time landing near a beat earns partial credit even if the detonation itself is a touch off, but full credit needs the burst — the actual explosion — on the beat, not just the launch.
+* **Energy tracking** — does the *amount* of stuff happening track how loud/busy the music is? Thin things out during a quiet verse; get denser during a big loud section. This is about overall density following the music's shape, not each individual beat.
+* **Dynamics** — does *your show itself* have real quiet stretches and real loud stretches, matching how much the music swings between the two? This is different from energy tracking: a show that's medium-busy all the way through, even if that density loosely follows the music's ups and downs, can still fall short here. Don't be afraid to have parts of your show with almost nothing happening, and other parts packed — the contrast is what's being measured.
+* **Climax** — does your show's own busiest moment land around the same time as the music's actual peak (often near the end, but not always)? There's real slack here — it doesn't need to be exact, just in the right neighborhood.
+* **Variety** — are you actually using the app's palette (shell shapes, colors, radius/trails/persistence, and where things appear on screen), or repeating the same handful of choices over and over? Also covers keeping shells in a sensible on-screen area — bunching everything at the very edges or down at ground level costs credit rather than earning it.
+
+You don't need all five to be perfect — the app looks at the best-scoring *combination* of these and grades you on that, so a show that's weak in one area but strong in the others can still land well. The scoring gets more demanding as you climb: a few minutes of casual effort is usually enough for a score in the 50s or 60s; the 90s take real, deliberate work — nudging burst times precisely, actually varying your settings on purpose, and paying attention to the music's own shape rather than firing at will.
 
 Shows can be saved/loaded as JSON.
 
