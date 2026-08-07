@@ -1509,7 +1509,7 @@ async function loadAudioBuffer(name,buf){
   analyzeBuffer(decoded);
   songName=name;
   currentSource='audio';
-  autoSongEvent(); updateRecLabel();                       // fit timeline to the song, 10s padding each side
+  autoSongEvent(); updateRecLabel();                       // fit timeline to the song, 5s padding each side
   setAudioStatus('✓');
   if(audioUiEl) audioUiEl.classList.add('on');             // show which control holds the track
 }
@@ -1600,7 +1600,7 @@ midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=59;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=60;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -2964,9 +2964,16 @@ tlLoadInput.onchange=ev=>{ const f=ev.target.files[0]; if(!f) return;
 /* ---- fit the timeline to a freshly loaded song ---- */
 function autoSongEvent(){
   if(!audioPlayer.buf) return;
-  timeline.events=timeline.events.filter(e=>e.kind!=='song');
   const d=audioPlayer.dur;
-  timeline.events.push({id:nextId(),kind:'song',t0:10,t1:10+d,name:songName,trackUrl:(activeTrack&&activeTrack.url)||undefined});
+  const existing=timeline.events.find(e=>e.kind==='song');
+  let t0=5, t1=5+d;                              // fresh load, nothing to preserve: default 5s in (was 10s)
+  if(existing){                                   // a song event is already here -- e.g. mid show-resolve, where
+    t0=existing.t0;                               // the just-loaded event's saved position is still sitting on the
+    const existingDur=(existing.t1!=null?existing.t1:existing.t0+d)-existing.t0;   // timeline right now. Preserve it
+    t1=t0+Math.min(existingDur,d);                // (duration too, clamped to the actual audio length) rather than
+  }                                                // silently resetting the position the user saved.
+  timeline.events=timeline.events.filter(e=>e.kind!=='song');
+  timeline.events.push({id:nextId(),kind:'song',t0,t1,name:songName,trackUrl:(activeTrack&&activeTrack.url)||undefined});
   const songSpan=Math.max(60,Math.ceil(d+20));           // fit tightly around the SONG itself here —
   timeline.zoom=Math.max(3,(window.innerWidth-40)/songSpan);   // separate from the scroll-out clamp below
   tlOpen();
