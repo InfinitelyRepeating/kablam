@@ -1543,7 +1543,7 @@ audioFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=65;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=66;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -2862,10 +2862,31 @@ async function resolveShowTrack(events){
 const tlFileMenu=document.getElementById('tlFileMenu'), tlFileBtn=document.getElementById('tlFile');
 const tlLoadInput=document.getElementById('tlLoad');
 function closeFileMenu(){ tlFileMenu.classList.remove('on'); }
-function saveShow(){
+async function saveShow(){
   const data={version:1,duration:computedDuration(),snap:timeline.snap,zoom:timeline.zoom,
     events:timeline.events.map(({_fired,_ended,_em,_rec,lane,...rest})=>rest)};
-  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const json=JSON.stringify(data,null,2);
+  /* A real "choose where to save, pick the name" dialog only exists in Chrome/Edge -- Firefox has
+     deliberately declined to implement showSaveFilePicker, and Safari (macOS, iPadOS, iOS) doesn't
+     support it either. So this is genuine progressive enhancement, not a bug if it's not "the same"
+     everywhere: where the browser actually offers a save dialog, use it: elsewhere, fall back to
+     the direct download this always did before, since that's the only option those browsers give
+     a web page. */
+  if(window.showSaveFilePicker){
+    try{
+      const handle=await window.showSaveFilePicker({
+        suggestedName:'kablam-show.json',
+        types:[{description:'Kablam! show',accept:{'application/json':['.json']}}]
+      });
+      const writable=await handle.createWritable();
+      await writable.write(json); await writable.close();
+      return;
+    }catch(err){
+      if(err && err.name==='AbortError') return;   // user cancelled the dialog -- respect that, don't force a download anyway
+      console.error('save picker failed, falling back to direct download:',err);   // fall through below
+    }
+  }
+  const blob=new Blob([json],{type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='kablam-show.json';
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),1500);
 }
