@@ -433,7 +433,7 @@
           <button class="btn" id="playBtn">▶</button>
           <select class="sel narrow" id="trackSel" title="Music included with Kablam!"><option value="" disabled selected>Included music…</option></select>
           <button class="btn" id="trackInfoBtn" title="Track info" hidden>ⓘ</button>
-          <label class="btn filebtn" id="audLabel" title="Load your own audio or MIDI file">Load Track<input id="audioFile" type="file" accept="audio/*,.mp3,.m4a,.mid,.midi"></label>
+          <label class="btn filebtn" id="audLabel" title="Load your own audio file">Load Track<input id="audioFile" type="file"></label>
           <span class="bnote" id="audStatus"></span>
           <button class="btn" id="stopBtn">■</button>
           <button class="btn" id="installBtn" hidden>⤓ Install</button>
@@ -1258,7 +1258,7 @@ function sndPop(){ if(!AC||muted)return; const t=AC.currentTime; const o=AC.crea
   const g=AC.createGain(); g.gain.setValueAtTime(0.14,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.1);
   o.connect(g); g.connect(masterGain); o.start(t); o.stop(t+0.1); }
 
-/* ---- bring-your-own music: local audio files + local MIDI files ---- */
+/* ---- bring-your-own music: local audio files ---- */
 /* Buffer-based player: decode once, play through masterGain (same path as the SFX).
    Avoids <audio>/createMediaElementSource, which can be silent or throw in sandboxed iframes. */
 const audioPlayer={ buf:null,src:null,gain:null,playing:false,startedAt:0,offset:0,dur:0,
@@ -1278,56 +1278,6 @@ const audioPlayer={ buf:null,src:null,gain:null,playing:false,startedAt:0,offset
     this.playing=false; },
 };
 
-/* minimal Standard-MIDI-File parser -> sorted note list [{m,t,d,v}] (no external deps) */
-function parseMIDI(buf){
-  const dv=new DataView(buf); if(dv.getUint32(0)!==0x4d546864) throw new Error('Not a MIDI file');
-  const ntrk=dv.getUint16(10); let div=dv.getUint16(12); if(div&0x8000) div=480; if(!div) div=480;
-  const P={o:14}, vlq=()=>{ let v=0,b; do{ b=dv.getUint8(P.o++); v=(v<<7)|(b&0x7f); }while(b&0x80); return v; };
-  const tempos=[{tick:0,us:500000}], raw=[];
-  for(let tr=0;tr<ntrk && P.o<dv.byteLength;tr++){
-    if(dv.getUint32(P.o)!==0x4d54726b) break; const end=P.o+8+dv.getUint32(P.o+4); P.o+=8;
-    let tick=0,status=0;
-    while(P.o<end){ tick+=vlq(); const b=dv.getUint8(P.o);
-      if(b&0x80){ status=b; P.o++; }                               // else: running status
-      if(status===0xff){ const type=dv.getUint8(P.o++), l=vlq();
-        if(type===0x51&&l===3) tempos.push({tick,us:(dv.getUint8(P.o)<<16)|(dv.getUint8(P.o+1)<<8)|dv.getUint8(P.o+2)}); P.o+=l; }
-      else if(status===0xf0||status===0xf7){ P.o+=vlq(); }
-      else { const hi=status&0xf0, ch=status&0x0f;
-        if(hi===0x90){ const n=dv.getUint8(P.o++), v=dv.getUint8(P.o++); raw.push({tick,on:v>0,ch,n,v}); }
-        else if(hi===0x80){ const n=dv.getUint8(P.o++); P.o++; raw.push({tick,on:false,ch,n,v:0}); }
-        else if(hi===0xa0||hi===0xb0||hi===0xe0) P.o+=2;
-        else if(hi===0xc0||hi===0xd0) P.o+=1;
-        else P.o++; }
-    }
-    P.o=end;
-  }
-  tempos.sort((a,b)=>a.tick-b.tick);
-  const t2s=(t)=>{ let s=0,last=0,us=500000; for(const seg of tempos){ if(seg.tick>t) break; s+=(seg.tick-last)/div*(us/1e6); last=seg.tick; us=seg.us; } return s+(t-last)/div*(us/1e6); };
-  raw.sort((a,b)=>a.tick-b.tick);
-  const open={}, notes=[];
-  for(const e of raw){ const k=e.ch*128+e.n;
-    if(e.on){ (open[k]||(open[k]=[])).push(e.tick); }
-    else { const a=open[k]; if(a&&a.length){ const st=a.shift(); notes.push({m:e.n,t:t2s(st),d:Math.max(0.05,t2s(e.tick)-t2s(st)),v:0.8}); } } }
-  notes.sort((a,b)=>a.t-b.t); return notes;
-}
-const midiPlayer={ notes:null,dur:0,idx:0,t0:0,playing:false,timer:null,gain:null,
-  load(buf){ this.notes=parseMIDI(buf); let d=0; for(const n of this.notes) d=Math.max(d,n.t+n.d); this.dur=d; },
-  start(fromTime){ fromTime=fromTime||0; ensureAudio(); if(!AC||!this.notes||!this.notes.length)return; if(AC.state==='suspended')AC.resume();
-    if(!this.gain){ this.gain=AC.createGain(); this.gain.gain.value=0.55; this.gain.connect(masterGain); }
-    this.idx=0; while(this.idx<this.notes.length && this.notes[this.idx].t<fromTime) this.idx++;   // skip notes before the resume point
-    this.t0=AC.currentTime+0.12-fromTime; this.playing=true;
-    if(this.timer) clearInterval(this.timer); this.timer=setInterval(()=>this.sched(),25); },
-  stop(){ this.playing=false; if(this.timer){ clearInterval(this.timer); this.timer=null; } },
-  sched(){ if(!this.playing||!AC)return; const ahead=(AC.currentTime+0.2)-this.t0;
-    while(this.idx<this.notes.length && this.notes[this.idx].t<=ahead){ const n=this.notes[this.idx++]; this.voice(440*Math.pow(2,(n.m-69)/12),this.t0+n.t,n.d,n.v); }
-    if(this.idx>=this.notes.length && AC.currentTime>this.t0+this.dur+0.4){ this.idx=0; this.t0=AC.currentTime+0.12; } },
-  voice(f,t,dur,vel){ const o=AC.createOscillator(); o.type='triangle'; o.frequency.value=f;
-    const o2=AC.createOscillator(); o2.type='sine'; o2.frequency.value=f*2;
-    const g=AC.createGain(), peak=Math.max(0.003,0.12*vel), r=Math.min(0.15,dur*0.4);
-    g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(peak,t+0.008);
-    g.gain.setValueAtTime(peak,t+Math.max(0.02,dur-r)); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
-    const g2=AC.createGain(); g2.gain.value=0.28; o2.connect(g2); g2.connect(g); o.connect(g); g.connect(this.gain);
-    o.start(t); o.stop(t+dur+0.03); o2.start(t); o2.stop(t+dur+0.03); } };
 
 /* ---- signal analysis at load: energy + onset-flux envelopes (dependency-free) ----
    Meyda / aubio.js / essentia.js give richer features (spectral, BPM) but ship via
@@ -1341,11 +1291,6 @@ function analyzeBuffer(abuf){
   for(let i=0;i<ch0.length;i+=frame){ let s=0; const n=Math.min(frame,ch0.length-i);
     for(let j=0;j<n;j++){ let v=ch0[i+j]; if(ch1) v=(v+ch1[i+j])*0.5; s+=v*v; } energy.push(Math.sqrt(s/n)); }
   return finishAnalysis(energy, frame/sr, abuf.duration);
-}
-function analyzeMIDINotes(notes,dur){
-  const frameSec=0.046, bins=Math.max(1,Math.ceil(dur/frameSec)), energy=new Array(bins).fill(0);
-  for(const n of notes){ const i=Math.floor(n.t/frameSec); if(i>=0&&i<bins) energy[i]+=n.v; }
-  return finishAnalysis(energy, frameSec, dur);
 }
 function finishAnalysis(energy, frameSec, duration){
   const max=Math.max(1e-6,...energy);
@@ -1428,27 +1373,16 @@ const audioFile=document.getElementById('audioFile');
 const trackSel=document.getElementById('trackSel'), audStatus=document.getElementById('audStatus');
 const stopBtn=document.getElementById('stopBtn');
 let audioUiEl=null;                                     // which control represents the loaded audio
-let currentSource='';                                   // '' | 'audio' | 'midi'
-function anyPlaying(){ return midiPlayer.playing||audioPlayer.playing; }
-/* MIDI and regular audio songs share the same timeline machinery (autoSongEvent, firing, resuming,
-   recording) -- these three helpers are the one place that knows which underlying player to use,
-   so that logic doesn't need to branch on currentSource in five different places. */
-function songLoaded(){ return currentSource==='midi' ? !!(midiPlayer.notes&&midiPlayer.notes.length) : !!audioPlayer.buf; }
-function songDur(){ return currentSource==='midi' ? midiPlayer.dur : audioPlayer.dur; }
-function playSongFrom(offsetSec){
-  if(currentSource==='midi'){ midiPlayer.start(Math.max(0,offsetSec||0)); updatePlayUI(); }
-  else if(audioPlayer.buf){ audioPlayer.offset=Math.max(0,offsetSec||0); audioPlayer.play({loop:false}); updatePlayUI(); }
-}
-function stopSong(){ if(currentSource==='midi') midiPlayer.stop(); else audioPlayer.stop(); updatePlayUI(); }
+let currentSource='';                                   // '' | 'audio'
+function anyPlaying(){ return audioPlayer.playing; }
 function updatePlayUI(){ const p=anyPlaying(); playBtn.textContent=p?'⏸':'▶'; playBtn.classList.toggle('on',p); }
-function stopAllMusic(){ midiPlayer.stop(); audioPlayer.stop();
+function stopAllMusic(){ audioPlayer.stop();
   trackSel.classList.remove('on'); audLabel.classList.remove('on');
   updatePlayUI(); }
 function playCurrent(){ stopAllMusic();
   ensureAudio(); if(AC && AC.state==='suspended') AC.resume();
   try{
     if(currentSource==='audio'){ if(!audioPlayer.buf) return; audioPlayer.play(); if(audioUiEl) audioUiEl.classList.add('on'); }
-    else if(currentSource==='midi'){ if(!midiPlayer.notes) return; midiPlayer.start(); if(audioUiEl) audioUiEl.classList.add('on'); }
     else return;                                        // nothing loaded yet
   }catch(err){ console.error('playback failed:',err); }  // never let an error kill the button
   updatePlayUI();
@@ -1463,12 +1397,9 @@ playBtn.onclick=()=>{ try{
     playCurrent();                                     // starts inside the gesture — what iOS requires
   }catch(err){ console.error(err); updatePlayUI(); } };
 stopBtn.onclick=stopAllMusic;
-/* iOS greys out valid MP3/MIDI files when `accept` is set, because Files maps it through
-   Apple's UTIs and web-downloaded audio often has none. So we accept ANY file and identify
-   it by its actual bytes instead — more reliable, and forgiving if you pick the wrong button. */
-function isMidiBuffer(buf){ const d=new DataView(buf);
-  return d.byteLength>4 && d.getUint32(0)===0x4d546864; }   // "MThd"
-
+/* iOS greys out valid MP3 files when `accept` is set, because Files maps it through Apple's
+   UTIs and web-downloaded audio often has none. So we accept ANY file rather than restrict by
+   type, and let the decode attempt itself fail with a clear error if it's not actually audio. */
 function setAudioStatus(sym,opts){ audStatus.textContent=sym;
   if(opts&&opts.clearMs) setTimeout(()=>{ if(audStatus.textContent===sym) audStatus.textContent=''; },opts.clearMs); }
 
@@ -1506,12 +1437,6 @@ document.addEventListener('pointerdown',e=>{                 // dismiss on any o
   trackInfoEl.classList.remove('on');
 });
 
-async function loadMidiBuffer(name,buf){
-  midiPlayer.load(buf); currentSource='midi'; songName=name;
-  analyzeMIDINotes(midiPlayer.notes, midiPlayer.dur);
-  audioUiEl=audLabel; audLabel.classList.add('on'); setAudioStatus('✓ MIDI');
-  autoSongEvent(); updateRecLabel();
-}
 async function loadAudioBuffer(name,buf){
   const decoded=await audioPlayer.loadBuffer(buf);
   analyzeBuffer(decoded);
@@ -1568,8 +1493,7 @@ async function loadPresetByUrl(t){
   try{
     const res=await fetch(t.url); if(!res.ok) throw new Error('fetch failed: '+res.status);
     const buf=await res.arrayBuffer();
-    if(isMidiBuffer(buf)) await loadMidiBuffer(t.name,buf);      // in case a preset entry points at a .mid file
-    else await loadAudioBuffer(t.name,buf);
+    await loadAudioBuffer(t.name,buf);
     setActiveTrack(t);                                   // metadata now available behind the ⓘ button
     return true;
   }catch(err){ console.error('could not load preset track:',t.url,err);
@@ -1588,14 +1512,13 @@ audioFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
   audioUiEl=audLabel; trackSel.value=''; trackSel.classList.remove('on');
   try{
     const buf=await f.arrayBuffer();
-    if(isMidiBuffer(buf)){ await loadMidiBuffer(f.name.replace(/\.[^.]+$/,''),buf); return; }   // you picked a MIDI — that's fine (status set inside)
     await loadAudioBuffer(f.name.replace(/\.[^.]+$/,''),buf);
   }catch(err){ console.error('could not load audio:',err); setAudioStatus('✗',{clearMs:2200}); }
   finally{ e.target.value=''; };                              // allow re-picking the same file
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=62;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=63;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -2069,7 +1992,7 @@ function applyPointerPosition(clientX,clientY){
     const t=ax/z, e=tlDrag.e;
     if(tlDrag.mode==='move'){ e.t0=Math.max(0,snapT(t-tlDrag.grab)); e.t1=e.t0+tlDrag.dur; }
     else if(tlDrag.mode==='end'){
-      const maxT1=(e.kind==='song' && songDur()) ? e.t0+songDur() : Infinity;  // can't stretch past the actual song length
+      const maxT1=(e.kind==='song' && audioPlayer.dur) ? e.t0+audioPlayer.dur : Infinity;  // can't stretch past the actual song length
       e.t1=Math.min(maxT1, Math.max(e.t0+MIN_DUR,snapT(t)));
     }
     else if(tlDrag.mode==='start'){ const t1=e.t1==null?e.t0+0.6:e.t1;
@@ -2222,7 +2145,7 @@ function createEvent(kind,t){
   else if(kind==='ground') e={id:nextId(),kind,t0:t,t1:t+(GROUND_DUR[curGround]||1.5),ground:curGround,
     color:curColor,rtp:{radius:1,trails:0.5,persist:1},x:0.5};
   else if(kind==='text') e={id:nextId(),kind,t0:t,t1:t+5,text:(msgInput.value.trim()||'HAPPY BIRTHDAY')};
-  else if(kind==='song') e={id:nextId(),kind,t0:t,t1:t+(songDur()||30),name:songName,trackUrl:(activeTrack&&activeTrack.url)||undefined};
+  else if(kind==='song') e={id:nextId(),kind,t0:t,t1:t+(audioPlayer.dur||30),name:songName,trackUrl:(activeTrack&&activeTrack.url)||undefined};
   else return;
   timeline.events.push(e);
   tlRefresh(); openEditor(e,lastClick.x,lastClick.y);
@@ -2355,7 +2278,7 @@ function openEditor(e,cx,cy){
     upd();
   }));
   const r1=elRow(tlEdit,e.kind==='shell'?'Explode':'End'); r1.appendChild(numBox(e.t1,v=>{
-    const maxT1=(e.kind==='song' && songDur()) ? e.t0+songDur() : Infinity;
+    const maxT1=(e.kind==='song' && audioPlayer.dur) ? e.t0+audioPlayer.dur : Infinity;
     e.t1=Math.min(maxT1, Math.max(e.t0+MIN_DUR,v)); upd();
   }));
 
@@ -2421,11 +2344,11 @@ function tlFire(e){
     launch(showX(e.x), showY(e.y), {fuse:frames,shell:e.shell,colorName:e.color,params:e.params,custom:e.custom,noRec:true}); }
   else if(e.kind==='ground'){ e._em=groundShot(e.ground, showX(e.x), {dur:e.t1-e.t0,colorName:e.color,rtp:e.rtp,noRec:true}); }
   else if(e.kind==='text'){ setMessageTimed(e.text, e.t1-e.t0); }
-  else if(e.kind==='song'){ if(songLoaded()) playSongFrom(0); }
+  else if(e.kind==='song'){ if(audioPlayer.buf){ audioPlayer.offset=0; audioPlayer.play({loop:false}); updatePlayUI(); } }
 }
 function tlEndEvent(e){
   if(e.kind==='text') setMessage('');
-  else if(e.kind==='song') stopSong();
+  else if(e.kind==='song'){ audioPlayer.stop(); updatePlayUI(); }
   else if(e.kind==='ground' && e._em && e._em.life!==undefined) e._em.life=0;
 }
 function tlStart(){
@@ -2445,8 +2368,9 @@ function tlStart(){
   closeEditor();   // no editing while playing -- don't leave an already-open editor's fields live
   tlFileBtn.disabled=true; tlRewindBtn.disabled=true; closeFileMenu();  // no editing the saved show out from under a running one
   tlAddBtn.disabled=true; tlSnapBtn.disabled=true; tlScoreBtn.disabled=true; tlRecBtn.disabled=true;  // only play/pause + show-hide stay active during playback
-  if(songEv && songLoaded() && songEv.t0<=tlTime && tlTime<(songEv.t1!=null?songEv.t1:songEv.t0+songDur())){
-    playSongFrom(tlTime-songEv.t0);   // resuming into the middle of the song — seek to match
+  if(songEv && audioPlayer.buf && songEv.t0<=tlTime && tlTime<(songEv.t1!=null?songEv.t1:songEv.t0+audioPlayer.dur)){
+    audioPlayer.offset=Math.max(0,tlTime-songEv.t0);   // resuming into the middle of the song — seek to match
+    audioPlayer.play({loop:false}); updatePlayUI();
   }
   timeline.events.forEach(e=>{                          // resuming into the middle of a text event — start it now,
     if(e.kind==='text' && e.t0<tlTime && tlTime<(e.t1!=null?e.t1:e.t0+5)) tlFire(e);   // from the beginning (no seek —
@@ -2525,7 +2449,11 @@ function tlRecordStart(){
     tlRewindBtn.disabled=true; tlPlayBtn.disabled=true; tlAddBtn.disabled=true;
     tlSnapBtn.disabled=true; tlScoreBtn.disabled=true; tlFileBtn.disabled=true;
     updateRecLabel(); tlOpen(); };
-  if(songEv && songLoaded()) playSongFrom(0);   // starts inside the gesture — what iOS requires
+  if(songEv && audioPlayer.buf){
+    audioPlayer.offset=0;
+    audioPlayer.play({loop:false});                   // starts inside the gesture — what iOS requires
+    updatePlayUI();
+  }
   begin();
 }
 function tlRecordStop(){
@@ -2897,7 +2825,7 @@ async function resolveShowTrack(events){
     const t=trackList.find(x=>x.url===song.trackUrl);
     if(t){ if(await loadPresetByUrl(t)){ showTrackToast('🎵 Loaded backing track: '+t.display); return; } }
     // named a preset but we couldn't find or fetch it (removed, renamed, offline) — fall through
-  } else if(songLoaded() && songName && songName===song.name){
+  } else if(audioPlayer.buf && songName && songName===song.name){
     // a custom track (no trackUrl to auto-fetch) — but the matching file is already loaded this
     // session, so there's nothing to ask for. The song event's own saved position already carries
     // over correctly (Build 60); this just confirms the audio backing it is already in place.
@@ -2958,8 +2886,8 @@ tlLoadInput.onchange=ev=>{ const f=ev.target.files[0]; if(!f) return;
 
 /* ---- fit the timeline to a freshly loaded song ---- */
 function autoSongEvent(){
-  if(!songLoaded()) return;
-  const d=songDur();
+  if(!audioPlayer.buf) return;
+  const d=audioPlayer.dur;
   const existing=timeline.events.find(e=>e.kind==='song');
   let t0=5, t1=5+d;                              // fresh load, nothing to preserve: default 5s in (was 10s)
   if(existing){                                   // a song event is already here -- e.g. mid show-resolve, where

@@ -13,7 +13,7 @@ Much of the display is self-explanatory, and if you don't understand what someth
 * The radius/trails/persistence (RTP) sliders affect shells and ground effects differently. In particular, most ground effects will ignore the trails slider, and the radius slider will determine the size of the effect.
 * The hammer icon refers to the "Shell Builder." The Shell Builder lets you subdivide a particular shell pattern up to two times, color each section of shells differently, deform the distribution of fragments, and set a unique RTP value for that shell (which gets combined with the global RTP sliders). You can also combine up to two shell types. Shell builder only applies to aerial shells.
 * The LED sign shows at ground level, and scrolls for lengthy messages
-* You can load mp3, m4a and MIDI music. Doing so will automatically add the music to the timeline (see below), but you can also just play it and launch fireworks in real time. The page also ships with a selection of public domain/freely licensed music that's popular for fireworks shows.
+* You can load mp3 and m4a music. Doing so will automatically add the music to the timeline (see below), but you can also just play it and launch fireworks in real time. The page also ships with a selection of public domain/freely licensed music that's popular for fireworks shows.
 * The "rapid" button will launch a series of random shells that follow your cursor. The red "finale" button will launch a random blast of shells and ground effects.
 
 # The Timeline (designing shows)
