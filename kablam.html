@@ -1222,8 +1222,29 @@ let AC=null,muted=false,masterGain=null;
 function ensureAudio(){ if(AC){ if(AC.state==='suspended') AC.resume(); return; } try{ AC=new (window.AudioContext||window.webkitAudioContext)();
   masterGain=AC.createGain(); masterGain.gain.value=muted?0:0.5; masterGain.connect(AC.destination);}catch(e){AC=null;} }
 /* iOS starts the audio context suspended and re-suspends it when the app is backgrounded.
-   ensureAudio() resumes it on every gesture; this just covers coming back from the background. */
-document.addEventListener('visibilitychange',()=>{ if(!document.hidden && AC && AC.state==='suspended') AC.resume(); });
+   ensureAudio() resumes it on every gesture; this just covers coming back from the background.
+   Also: rAF (and with it, the timeline's own tlTime+=dt/60 advancement) is paused or throttled
+   while backgrounded on every platform -- but Web Audio keeps playing on its own hardware clock
+   regardless, since pausing audio in the background would break every normal media app. So a
+   playing show's audio drifts ahead of its own playhead the whole time it's hidden. On return,
+   catch tlTime up to match where the audio actually is (the reliable clock here), and mark
+   whatever fell between the old and new playhead as skipped -- letting the normal tick loop
+   process that gap instead would rapid-fire every missed event in one frame. */
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden) return;
+  if(AC && AC.state==='suspended') AC.resume();
+  if(!tlPlaying) return;
+  const songEv=songOnTimeline();
+  if(!songEv || currentSource!=='audio' || !audioPlayer.playing || audioPlayer.startedAt==null) return;
+  const caughtUpTime=songEv.t0+(AC.currentTime-audioPlayer.startedAt);
+  if(!(caughtUpTime>tlTime)) return;                 // nothing to catch up to
+  timeline.events.forEach(e=>{
+    if(e._fired && !e._ended){ tlEndEvent(e); e._ended=true; }          // clean up anything left mid-flight
+    if(!e._fired && e.t0<caughtUpTime){ e._fired=true; e._ended=true; } // skip anything whose moment already passed
+  });
+  tlTime=caughtUpTime;
+  tlClockEl.textContent=fmtClock(tlTime); tlFollowPlayhead(); tlDraw();
+});
 function nb(dur){ const len=AC.sampleRate*dur, b=AC.createBuffer(1,len,AC.sampleRate), d=b.getChannelData(0);
   for(let i=0;i<len;i++) d[i]=Math.random()*2-1; return b; }
 function sndLaunch(){ if(!AC||muted)return; const t=AC.currentTime; const s=AC.createBufferSource(); s.buffer=nb(0.3);
@@ -1518,7 +1539,7 @@ audioFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=63;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=64;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
