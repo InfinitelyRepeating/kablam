@@ -1543,7 +1543,7 @@ audioFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=76;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=77;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -2490,7 +2490,9 @@ function updateRecLabel(){ const hasSong=!!songOnTimeline();
   tlRecBtn.title = recording ? 'Stop recording' : (hasSong ? 'Play music & record' : 'Record'); }
 function tlRecordStart(){
   const songEv=songOnTimeline();
-  recOffset=0;                                          // recording always starts the playhead at 0:00
+  recOffset=0; tlTime=0;                                // recording always starts the playhead at 0:00 -- set tlTime
+                                                          // directly too, since tlOpen() below draws before the
+                                                          // recording tick loop gets a chance to compute it itself
   if(songEv){                                            // the song plays from the start of the file either way (below) --
     const dur=songEv.t1-songEv.t0;                       // move its event to match, preserving whatever duration it had
     songEv.t0=0; songEv.t1=dur;
