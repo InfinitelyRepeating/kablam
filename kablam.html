@@ -1543,7 +1543,7 @@ audioFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=72;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=73;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -1893,23 +1893,23 @@ function drawEvent(e,off,voff,w,vh){
   if(y+hh<=TL_RULER_H || y>=vh) return;               // scrolled under the ruler or past the bottom
   if(e.kind==='song' && analysis){                                   // energy-colored song bar + beat/dynamics ticks
     const n=analysis.energy.length, dur=analysis.duration||1, xa=Math.max(0,x0), xb=Math.min(w,x0+wid);
-    const barH=hh-8, tickBase=y+hh;                                    // ticks anchor at the LANE's bottom now, not a
-    for(let x=xa;x<xb;x++){ const tSec=(x-x0)/z;                       // separate small band -- tall ones deliberately
-      if(tSec<0||tSec>=dur) continue;                                  // reach up into the color bar and paint over it
-      const frac=tSec/dur, v=analysis.energy[Math.min(n-1,Math.max(0,Math.floor(frac*n)))]||0;
-      tlg.fillStyle=`hsl(${210-v*210},85%,${20+v*34}%)`; tlg.fillRect(x,y,1.6,barH); }
+    const dynH=5, barTop=y+dynH+1, barH=hh-dynH-1, tickBase=y+hh;      // dynamics get their own strip at the very
+    for(let x=xa;x<xb;x++){ const tSec=(x-x0)/z;                       // top, clearly separate from the beat ticks —
+      if(tSec<0||tSec>=dur) continue;                                  // which still reach up into the bar from the
+      const frac=tSec/dur, v=analysis.energy[Math.min(n-1,Math.max(0,Math.floor(frac*n)))]||0;   // bottom, unchanged
+      tlg.fillStyle=`hsl(${210-v*210},85%,${20+v*34}%)`; tlg.fillRect(x,barTop,1.6,barH); }
     const ticks=getBeatTicks();
     if(ticks){
       const tickW=Math.max(1,Math.min(3.2,z/45));           // 1x at low/default zoom, widening as you zoom in
       tlg.save(); tlg.beginPath(); tlg.rect(xa,y,Math.max(0,xb-xa),hh); tlg.clip();   // a wide triangle must stay
-      tlg.fillStyle='rgba(150,185,220,0.8)';                 // within this event's own box, same as everything else here
+      tlg.fillStyle='rgba(150,185,220,0.85)';                // within this event's own box, same as everything else here
       for(const s of ticks.dynamicsSegs){ if(s.t1<0||s.t0>=dur) continue;   // direction-aware: width = duration of the
         const sx0=x0+s.t0*z, sx1=x0+s.t1*z;                  // swell/drop, height = magnitude, base (tall edge) sits on
         if(sx1<xa-2||sx0>xb+2) continue;                     // whichever side has more energy, tapering to a point
-        const th=Math.max(3,hh*0.85*s.magNorm);              // on the lower-energy side
-        tlg.beginPath();
-        if(s.rising){ tlg.moveTo(sx0,tickBase); tlg.lineTo(sx1,tickBase); tlg.lineTo(sx1,tickBase-th); }
-        else { tlg.moveTo(sx1,tickBase); tlg.lineTo(sx0,tickBase); tlg.lineTo(sx0,tickBase-th); }
+        const th=Math.max(2,dynH*s.magNorm);                 // on the lower-energy side -- anchored at the TOP now,
+        tlg.beginPath();                                     // growing down into its own strip, above the bar
+        if(s.rising){ tlg.moveTo(sx0,y); tlg.lineTo(sx1,y); tlg.lineTo(sx1,y+th); }
+        else { tlg.moveTo(sx1,y); tlg.lineTo(sx0,y); tlg.lineTo(sx0,y+th); }
         tlg.closePath(); tlg.fill(); }
       tlg.restore();
       for(const a of ticks.thinned){ if(a.t>=dur) continue;            // the full steady beat grid — every tempo-
