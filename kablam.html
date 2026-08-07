@@ -1543,7 +1543,7 @@ audioFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=77;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=78;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -2503,7 +2503,7 @@ function tlRecordStart(){
     tlRecBtn.classList.add('on');
     tlRewindBtn.disabled=true; tlPlayBtn.disabled=true; tlAddBtn.disabled=true;
     tlSnapBtn.disabled=true; tlScoreBtn.disabled=true; tlFileBtn.disabled=true;
-    updateRecLabel(); tlOpen(); };
+    updateRecLabel(); tlOpen(); tlFollowPlayhead(); tlDraw(); };
   if(songEv && audioPlayer.buf){
     audioPlayer.offset=0;
     audioPlayer.play({loop:false});                   // starts inside the gesture — what iOS requires
