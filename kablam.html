@@ -433,9 +433,8 @@
           <button class="btn" id="playBtn">▶</button>
           <select class="sel narrow" id="trackSel" title="Music included with Kablam!"><option value="" disabled selected>Included music…</option></select>
           <button class="btn" id="trackInfoBtn" title="Track info" hidden>ⓘ</button>
-          <label class="btn filebtn" id="audLabel" title="Load your own audio file">Load Track<input id="audioFile" type="file"></label>
+          <label class="btn filebtn" id="audLabel" title="Load your own audio or MIDI file">Load Track<input id="audioFile" type="file" accept="audio/*,.mp3,.m4a,.mid,.midi"></label>
           <span class="bnote" id="audStatus"></span>
-          <label class="btn filebtn" id="midLabel">MIDI<input id="midiFile" type="file"></label>
           <button class="btn" id="stopBtn">■</button>
           <button class="btn" id="installBtn" hidden>⤓ Install</button>
         </div>
@@ -1424,21 +1423,21 @@ muteBtn.onclick=()=>{ muted=!muted; ensureAudio(); if(masterGain) masterGain.gai
   muteBtn.classList.toggle('off',muted); muteBtn.textContent=muted?'♪ Muted':'♪ Sound'; };
 
 const playBtn=document.getElementById('playBtn');
-const audioFile=document.getElementById('audioFile'), midiFile=document.getElementById('midiFile');
+const audioFile=document.getElementById('audioFile');
 const trackSel=document.getElementById('trackSel'), audStatus=document.getElementById('audStatus');
-const stopBtn=document.getElementById('stopBtn'), midLabel=document.getElementById('midLabel');
+const stopBtn=document.getElementById('stopBtn');
 let audioUiEl=null;                                     // which control represents the loaded audio
 let currentSource='';                                   // '' | 'audio' | 'midi'
 function anyPlaying(){ return midiPlayer.playing||audioPlayer.playing; }
 function updatePlayUI(){ const p=anyPlaying(); playBtn.textContent=p?'⏸':'▶'; playBtn.classList.toggle('on',p); }
 function stopAllMusic(){ midiPlayer.stop(); audioPlayer.stop();
-  trackSel.classList.remove('on'); audLabel.classList.remove('on'); midLabel.classList.remove('on');
+  trackSel.classList.remove('on'); audLabel.classList.remove('on');
   updatePlayUI(); }
 function playCurrent(){ stopAllMusic();
   ensureAudio(); if(AC && AC.state==='suspended') AC.resume();
   try{
     if(currentSource==='audio'){ if(!audioPlayer.buf) return; audioPlayer.play(); if(audioUiEl) audioUiEl.classList.add('on'); }
-    else if(currentSource==='midi'){ if(!midiPlayer.notes) return; midiPlayer.start(); midLabel.classList.add('on'); }
+    else if(currentSource==='midi'){ if(!midiPlayer.notes) return; midiPlayer.start(); if(audioUiEl) audioUiEl.classList.add('on'); }
     else return;                                        // nothing loaded yet
   }catch(err){ console.error('playback failed:',err); }  // never let an error kill the button
   updatePlayUI();
@@ -1461,8 +1460,6 @@ function isMidiBuffer(buf){ const d=new DataView(buf);
 
 function setAudioStatus(sym,opts){ audStatus.textContent=sym;
   if(opts&&opts.clearMs) setTimeout(()=>{ if(audStatus.textContent===sym) audStatus.textContent=''; },opts.clearMs); }
-function flashLabel(lbl,base,msg,ms){ lbl.firstChild.nodeValue=msg;
-  setTimeout(()=>{ lbl.firstChild.nodeValue=base; }, ms||2200); }
 
 /* ---- track info widget: shows the full name + source link for a loaded PRESET track.
    Hidden for user-picked files, which have no manifest metadata to show. ---- */
@@ -1501,7 +1498,7 @@ document.addEventListener('pointerdown',e=>{                 // dismiss on any o
 async function loadMidiBuffer(buf){
   midiPlayer.load(buf); currentSource='midi';
   analyzeMIDINotes(midiPlayer.notes, midiPlayer.dur);
-  midLabel.firstChild.nodeValue='MIDI ✓'; midLabel.classList.add('on');
+  audioUiEl=audLabel; audLabel.classList.add('on'); setAudioStatus('✓ MIDI');
   playCurrent();
 }
 async function loadAudioBuffer(name,buf){
@@ -1580,27 +1577,14 @@ audioFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
   audioUiEl=audLabel; trackSel.value=''; trackSel.classList.remove('on');
   try{
     const buf=await f.arrayBuffer();
-    if(isMidiBuffer(buf)){ await loadMidiBuffer(buf);          // you picked a MIDI — that's fine
-      setAudioStatus(''); return; }
+    if(isMidiBuffer(buf)){ await loadMidiBuffer(buf); return; }   // you picked a MIDI — that's fine (status set inside)
     await loadAudioBuffer(f.name.replace(/\.[^.]+$/,''),buf);
   }catch(err){ console.error('could not load audio:',err); setAudioStatus('✗',{clearMs:2200}); }
   finally{ e.target.value=''; };                              // allow re-picking the same file
 };
-midiFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
-  ensureAudio(); if(AC&&AC.state==='suspended') AC.resume();
-  midLabel.firstChild.nodeValue='MIDI…'; setActiveTrack(null);
-  try{
-    const buf=await f.arrayBuffer();
-    if(isMidiBuffer(buf)) await loadMidiBuffer(buf);
-    else { await loadAudioBuffer(f.name.replace(/\.[^.]+$/,''),buf);   // you picked an audio file — that's fine too
-      flashLabel(midLabel,'MIDI','MIDI'); }
-  }catch(err){ console.error('could not load midi:',err);
-    flashLabel(midLabel,'MIDI','Not MIDI ✗'); }
-  finally{ e.target.value=''; };
-};
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=60;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=61;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -1953,7 +1937,7 @@ function drawEvent(e,off,voff,w,vh){
     for(let x=xa;x<xb;x++){ const tSec=(x-x0)/z;                       // fixed seconds-per-pixel (zoom), not box-width-relative —
       if(tSec<0||tSec>=dur) continue;                                  // past the song's actual end: nothing to draw, not squished
       const frac=tSec/dur, v=analysis.energy[Math.min(n-1,Math.max(0,Math.floor(frac*n)))]||0;
-      tlg.fillStyle=`hsl(${210-v*210},85%,${20+v*34}%)`; tlg.fillRect(x,y,1,hh); }
+      tlg.fillStyle=`hsl(${210-v*210},85%,${20+v*34}%)`; tlg.fillRect(x,y,1.6,hh); }
     if(analysis.accents){                                            // musical hits: aim your shells here
       tlg.fillStyle='rgba(255,255,255,0.55)';
       for(const a of analysis.accents){ if(a.t>=dur) continue; const ax=x0+a.t*z;   // same fixed zoom-based position
@@ -2907,6 +2891,11 @@ async function resolveShowTrack(events){
     const t=trackList.find(x=>x.url===song.trackUrl);
     if(t){ if(await loadPresetByUrl(t)){ showTrackToast('🎵 Loaded backing track: '+t.display); return; } }
     // named a preset but we couldn't find or fetch it (removed, renamed, offline) — fall through
+  } else if(audioPlayer.buf && songName && songName===song.name){
+    // a custom track (no trackUrl to auto-fetch) — but the matching file is already loaded this
+    // session, so there's nothing to ask for. The song event's own saved position already carries
+    // over correctly (Build 60); this just confirms the audio backing it is already in place.
+    showTrackToast('🎵 Using loaded track: '+song.name); return;
   }
   showTrackNeededDialog(song.name||'this track');
 }
