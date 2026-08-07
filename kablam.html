@@ -1543,7 +1543,7 @@ audioFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=68;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=69;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -1893,21 +1893,28 @@ function drawEvent(e,off,voff,w,vh){
   if(y+hh<=TL_RULER_H || y>=vh) return;               // scrolled under the ruler or past the bottom
   if(e.kind==='song' && analysis){                                   // energy-colored song bar + beat/dynamics ticks
     const n=analysis.energy.length, dur=analysis.duration||1, xa=Math.max(0,x0), xb=Math.min(w,x0+wid);
-    const barH=hh-7, tickY=y+barH+1, tickBandH=hh-barH-1;             // redistribute the lane's existing height —
+    const barH=hh-8, tickY=y+barH+1, tickBandH=hh-barH-1;             // redistribute the lane's existing height —
     for(let x=xa;x<xb;x++){ const tSec=(x-x0)/z;                      // no change to lane height itself, just how
       if(tSec<0||tSec>=dur) continue;                                  // past the song's actual end: nothing to draw, not squished
       const frac=tSec/dur, v=analysis.energy[Math.min(n-1,Math.max(0,Math.floor(frac*n)))]||0;
       tlg.fillStyle=`hsl(${210-v*210},85%,${20+v*34}%)`; tlg.fillRect(x,y,1.6,barH); }
     const ticks=getBeatTicks();
     if(ticks){
-      tlg.fillStyle='rgba(120,130,145,0.55)';                          // dynamics: rate of energy change, not beats —
+      tlg.fillStyle='rgba(150,185,220,0.8)';                           // dynamics: rate of energy change, not beats —
       for(const dt of ticks.dynamicsTicks){ if(dt.t>=dur) continue;    // tall where the music is swelling or dropping,
         const dx=x0+dt.t*z; if(dx<xa-1||dx>xb+1) continue;             // flat where it's holding steady
-        tlg.fillRect(dx,tickY+tickBandH-Math.max(1,tickBandH*0.65*dt.d),1,Math.max(1,tickBandH*0.65*dt.d)); }
-      tlg.fillStyle='rgba(255,179,71,0.9)';                            // required beats: exactly what the scorer checks —
-      for(const a of ticks.required){ if(a.t>=dur) continue;           // aim bursts here for accent-sync credit
-        const ax=x0+a.t*z; if(ax<xa-1||ax>xb+1) continue;
-        tlg.fillRect(ax,tickY,1.4,Math.max(2,tickBandH*(0.5+0.5*a.s))); }
+        const dh=Math.max(1.5,tickBandH*0.8*dt.d);
+        tlg.fillRect(dx,tickY+tickBandH-dh,1.3,dh); }
+      for(const a of ticks.thinned){ if(a.t>=dur) continue;            // the full steady beat grid — every tempo-
+        const ax=x0+a.t*z; if(ax<xa-1||ax>xb+1) continue;              // thinned beat, not just the required ones
+        if(ticks.requiredTs.has(a.t)){                                 // required: what the scorer actually checks —
+          tlg.fillStyle='rgba(255,190,90,0.95)';                       // drawn taller and brighter, standing out
+          tlg.fillRect(ax,tickY,1.8,Math.max(3,tickBandH*(0.55+0.45*a.s)));
+        } else {                                                       // present but secondary — still reads as
+          tlg.fillStyle='rgba(255,179,71,0.4)';                        // "a beat," just not one you're required to hit
+          tlg.fillRect(ax,tickY,1.3,Math.max(1.5,tickBandH*0.35));
+        }
+      }
     }
   } else {
     const c=(e.color&&COLORS[e.color])||[170,175,190], multi=(e.color==='multi');
@@ -2610,21 +2617,24 @@ function computeRequiredAccents(rawAccents, eAt, songDuration){
   const required=thinned.filter(a=>requiredSet.has(a)).sort((a,b)=>a.t-b.t);
   return {required, thinned};
 }
-/* Timeline display ticks: the amber set is exactly what computeRequiredAccents scores against, so
-   the ticks you see while placing shells are the same ones your score is measured on. The gray set
-   is a different thing entirely -- not beats at all, but a visual for "dynamics": how fast the
-   music's energy is rising or falling at each point, sampled at a fixed interval (not scored
-   against, just a guide). Cached on the analysis object itself, since it involves a sort over
-   potentially thousands of accents and would otherwise redo that work on every single drawn frame
-   during scroll/pan -- naturally invalidated whenever a new song loads, since that always creates a
-   fresh analysis object without this property yet. */
+/* Timeline display ticks: shows every beat that survived tempo-thinning (a steady, roughly evenly-
+   spaced grid), with the ones that ALSO made the scorer's top-fraction "required" cut drawn taller
+   and brighter among them. So what you see is the full rhythmic grid, with the specific moments
+   your score is actually measured against standing out within it -- rather than only showing the
+   thinned-down required set on its own, which is sparser and doesn't read as a steady beat.
+   The gray set is a different thing entirely -- not beats at all, but a visual for "dynamics": how
+   fast the music's energy is rising or falling at each point, sampled at a fixed interval (not
+   scored against, just a guide). Cached on the analysis object itself, since it involves a sort
+   over potentially thousands of accents and would otherwise redo that work on every single drawn
+   frame during scroll/pan -- naturally invalidated whenever a new song loads, since that always
+   creates a fresh analysis object without this property yet. */
 function getBeatTicks(){
   if(!analysis) return null;
   if(analysis._beatTicks) return analysis._beatTicks;
   const fs=analysis.frameSec, N=analysis.energy.length, dur=analysis.duration||N*fs;
   const eAt=t=>analysis.energy[Math.max(0,Math.min(N-1,Math.floor(t/fs)))]||0;
   const rawAccents=(analysis.accents||[]).filter(a=>a.t<dur);
-  const {required}=computeRequiredAccents(rawAccents,eAt,dur);
+  const {required, thinned}=computeRequiredAccents(rawAccents,eAt,dur);
 
   const DERIV_STEP=1.5, DERIV_LOOKAHEAD=1.5;             // sampled, not per-frame -- a guide, not a precise score input
   const dynamicsTicks=[];
@@ -2635,7 +2645,8 @@ function getBeatTicks(){
   const dmax=Math.max(1e-6, ...dynamicsTicks.map(x=>x.d));
   dynamicsTicks.forEach(x=>x.d=x.d/dmax);                // normalized 0..1, so the tallest swing in the song maxes out
 
-  analysis._beatTicks={required, dynamicsTicks};
+  const requiredTs=new Set(required.map(a=>a.t));
+  analysis._beatTicks={thinned, requiredTs, dynamicsTicks};
   return analysis._beatTicks;
 }
 /* the shared gentle curve applied to every raw dimension score before combining them */
