@@ -1543,7 +1543,7 @@ audioFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=71;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=72;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -1901,11 +1901,17 @@ function drawEvent(e,off,voff,w,vh){
     const ticks=getBeatTicks();
     if(ticks){
       const tickW=Math.max(1,Math.min(3.2,z/45));           // 1x at low/default zoom, widening as you zoom in
-      tlg.fillStyle='rgba(150,185,220,0.8)';                 // dynamics: rate of energy change, not beats —
-      for(const dt of ticks.dynamicsTicks){ if(dt.t>=dur) continue;    // tall where the music is swelling or dropping,
-        const dx=x0+dt.t*z; if(dx<xa-1||dx>xb+1) continue;             // flat where it's holding steady
-        const dh=Math.max(2,hh*0.55*dt.d);
-        tlg.fillRect(dx,tickBase-dh,1.3*tickW,dh); }
+      tlg.save(); tlg.beginPath(); tlg.rect(xa,y,Math.max(0,xb-xa),hh); tlg.clip();   // a wide triangle must stay
+      tlg.fillStyle='rgba(150,185,220,0.8)';                 // within this event's own box, same as everything else here
+      for(const s of ticks.dynamicsSegs){ if(s.t1<0||s.t0>=dur) continue;   // direction-aware: width = duration of the
+        const sx0=x0+s.t0*z, sx1=x0+s.t1*z;                  // swell/drop, height = magnitude, base (tall edge) sits on
+        if(sx1<xa-2||sx0>xb+2) continue;                     // whichever side has more energy, tapering to a point
+        const th=Math.max(3,hh*0.85*s.magNorm);              // on the lower-energy side
+        tlg.beginPath();
+        if(s.rising){ tlg.moveTo(sx0,tickBase); tlg.lineTo(sx1,tickBase); tlg.lineTo(sx1,tickBase-th); }
+        else { tlg.moveTo(sx1,tickBase); tlg.lineTo(sx0,tickBase); tlg.lineTo(sx0,tickBase-th); }
+        tlg.closePath(); tlg.fill(); }
+      tlg.restore();
       for(const a of ticks.thinned){ if(a.t>=dur) continue;            // the full steady beat grid — every tempo-
         const ax=x0+a.t*z; if(ax<xa-1||ax>xb+1) continue;              // thinned beat, not just the required ones
         if(ticks.requiredTs.has(a.t)){                                 // required: what the scorer actually checks —
@@ -2620,6 +2626,43 @@ function computeRequiredAccents(rawAccents, eAt, songDuration){
   const required=thinned.filter(a=>requiredSet.has(a)).sort((a,b)=>a.t-b.t);
   return {required, thinned};
 }
+/* Genuine swells and drops in the music's energy, as discrete spans -- not a derivative sampled at
+   fixed points. Finds local extrema (turning points) on the already-smoothed energy curve, then
+   iteratively merges any segment whose change is too small to matter into its neighbor, so what's
+   left is a small number of real, meaningful dynamic changes rather than noise. Each segment carries
+   its own start/end (duration), direction (rising or falling), and magnitude -- everything the
+   direction-aware triangle display needs. */
+function computeDynamicsSegments(energyArr, frameSec){
+  const n=energyArr.length;
+  if(n<3) return [];
+  const extremaIdx=[0];
+  for(let i=1;i<n-1;i++){
+    const d1=energyArr[i]-energyArr[i-1], d2=energyArr[i+1]-energyArr[i];
+    if((d1>0&&d2<0)||(d1<0&&d2>0)) extremaIdx.push(i);
+  }
+  extremaIdx.push(n-1);
+  let segs=[];
+  for(let k=0;k<extremaIdx.length-1;k++){
+    const i0=extremaIdx[k], i1=extremaIdx[k+1];
+    segs.push({i0, i1, e0:energyArr[i0], e1:energyArr[i1]});
+  }
+  const MIN_MAG=0.10;                                    // below this, treat it as noise, not a real dynamic change
+  let changed=true, guard=0;
+  while(changed && guard++<2000){
+    changed=false;
+    for(let k=0;k<segs.length;k++){
+      const s=segs[k];
+      if(Math.abs(s.e1-s.e0)<MIN_MAG && segs.length>1){
+        if(k<segs.length-1){ segs[k+1].i0=s.i0; segs[k+1].e0=s.e0; segs.splice(k,1); }
+        else { segs[k-1].i1=s.i1; segs[k-1].e1=s.e1; segs.splice(k,1); }
+        changed=true; break;
+      }
+    }
+  }
+  const MIN_DUR=1.0;                                      // a genuine swell, not a single-frame blip
+  return segs.filter(s=>(s.i1-s.i0)*frameSec>=MIN_DUR && Math.abs(s.e1-s.e0)>1e-6)
+    .map(s=>({t0:s.i0*frameSec, t1:s.i1*frameSec, mag:Math.abs(s.e1-s.e0), rising:s.e1>s.e0}));
+}
 /* Timeline display ticks: shows every beat that survived tempo-thinning (a steady, roughly evenly-
    spaced grid), with the ones that ALSO made the scorer's top-fraction "required" cut drawn taller
    and brighter among them. So what you see is the full rhythmic grid, with the specific moments
@@ -2639,17 +2682,12 @@ function getBeatTicks(){
   const rawAccents=(analysis.accents||[]).filter(a=>a.t<dur);
   const {required, thinned}=computeRequiredAccents(rawAccents,eAt,dur);
 
-  const DERIV_STEP=1.5, DERIV_LOOKAHEAD=1.5;             // sampled, not per-frame -- a guide, not a precise score input
-  const dynamicsTicks=[];
-  for(let t=0; t<dur; t+=DERIV_STEP){
-    const d=Math.abs(eAt(Math.min(dur,t+DERIV_LOOKAHEAD))-eAt(t));
-    dynamicsTicks.push({t, d});
-  }
-  const dmax=Math.max(1e-6, ...dynamicsTicks.map(x=>x.d));
-  dynamicsTicks.forEach(x=>x.d=x.d/dmax);                // normalized 0..1, so the tallest swing in the song maxes out
+  const dynamicsSegs=computeDynamicsSegments(analysis.energy, fs);
+  const dmax=Math.max(1e-6, ...dynamicsSegs.map(s=>s.mag));
+  dynamicsSegs.forEach(s=>s.magNorm=s.mag/dmax);          // normalized 0..1, so the biggest swing in the song maxes out
 
   const requiredTs=new Set(required.map(a=>a.t));
-  analysis._beatTicks={thinned, requiredTs, dynamicsTicks};
+  analysis._beatTicks={thinned, requiredTs, dynamicsSegs};
   return analysis._beatTicks;
 }
 /* the shared gentle curve applied to every raw dimension score before combining them */
