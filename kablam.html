@@ -1543,7 +1543,7 @@ audioFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=74;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=75;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -1893,10 +1893,10 @@ function drawEvent(e,off,voff,w,vh){
   if(y+hh<=TL_RULER_H || y>=vh) return;               // scrolled under the ruler or past the bottom
   if(e.kind==='song' && analysis){                                   // energy-colored song bar + beat/dynamics ticks
     const n=analysis.energy.length, dur=analysis.duration||1, xa=Math.max(0,x0), xb=Math.min(w,x0+wid);
-    const dynH=5, barTop=y+dynH+1, barH=hh-dynH-1, tickBase=y+hh;      // dynamics get their own strip at the very
-    for(let x=xa;x<xb;x++){ const tSec=(x-x0)/z;                       // top, clearly separate from the beat ticks —
-      if(tSec<0||tSec>=dur) continue;                                  // which still reach up into the bar from the
-      const frac=tSec/dur, v=analysis.energy[Math.min(n-1,Math.max(0,Math.floor(frac*n)))]||0;   // bottom, unchanged
+    const dynH=5, barTop=y+dynH+1, barH=5, tickTop=barTop+barH+1, tickBase=y+hh;   // three clearly separate
+    for(let x=xa;x<xb;x++){ const tSec=(x-x0)/z;                       // strips now: dynamics (top), the bar
+      if(tSec<0||tSec>=dur) continue;                                  // (middle), beat ticks (bottom) -- ticks no
+      const frac=tSec/dur, v=analysis.energy[Math.min(n-1,Math.max(0,Math.floor(frac*n)))]||0;   // longer reach into the bar at all
       tlg.fillStyle=`hsl(${210-v*210},85%,${20+v*34}%)`; tlg.fillRect(x,barTop,1.6,barH); }
     const ticks=getBeatTicks();
     if(ticks){
@@ -1912,17 +1912,17 @@ function drawEvent(e,off,voff,w,vh){
         else { tlg.moveTo(sx1,y); tlg.lineTo(sx0,y); tlg.lineTo(sx0,y+th); }
         tlg.closePath(); tlg.fill(); }
       tlg.restore();
-      const barCenter=barTop+barH/2, reqMax=tickBase-barCenter;   // required reaches exactly to the bar's centerline
+      const tickRegionH=tickBase-tickTop;                    // both tiers now confined to their own strip below the bar
       for(const a of ticks.thinned){ if(a.t>=dur) continue;            // the full steady beat grid — every tempo-
         const ax=x0+a.t*z; if(ax<xa-1||ax>xb+1) continue;              // thinned beat, not just the required ones
         if(ticks.requiredTs.has(a.t)){                                 // required: what the scorer actually checks —
-          const rh=Math.max(3.5,reqMax*(0.5+0.5*a.s));
-          tlg.fillStyle='rgba(255,190,90,0.95)';                       // bright, tallest -- reaches up to the bar's centerline
+          const rh=Math.max(3,tickRegionH*(0.5+0.5*a.s));
+          tlg.fillStyle='rgba(255,190,90,0.95)';                       // bright, tallest within the strip
           tlg.fillRect(ax,tickBase-rh,1.8*tickW,rh);
         } else {                                                       // medium importance: amber, modestly bigger than
-          const sh=3;                                                  // before, but clearly shorter than required —
-          tlg.fillStyle='rgba(255,179,71,0.55)';                       // still anchored below the timeline, not reaching
-          tlg.fillRect(ax,tickBase-sh,1.4*tickW,sh);                   // as high
+          const sh=Math.max(1.5,tickRegionH*0.4);                      // before, but clearly shorter than required —
+          tlg.fillStyle='rgba(255,179,71,0.55)';                       // still just below the timeline, same strip
+          tlg.fillRect(ax,tickBase-sh,1.4*tickW,sh);
         }
       }
     }
