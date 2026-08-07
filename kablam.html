@@ -1543,7 +1543,7 @@ audioFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=67;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=68;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -1891,16 +1891,23 @@ function drawEvent(e,off,voff,w,vh){
   if(x1<-6||x0>w+6) return;
   const y=TL_RULER_H+e.lane*TL_LANE_H+3-voff, hh=TL_LANE_H-6, wid=Math.max(TL_ICON+4,x1-x0);
   if(y+hh<=TL_RULER_H || y>=vh) return;               // scrolled under the ruler or past the bottom
-  if(e.kind==='song' && analysis){                                   // energy-colored song bar
+  if(e.kind==='song' && analysis){                                   // energy-colored song bar + beat/dynamics ticks
     const n=analysis.energy.length, dur=analysis.duration||1, xa=Math.max(0,x0), xb=Math.min(w,x0+wid);
-    for(let x=xa;x<xb;x++){ const tSec=(x-x0)/z;                       // fixed seconds-per-pixel (zoom), not box-width-relative —
+    const barH=hh-7, tickY=y+barH+1, tickBandH=hh-barH-1;             // redistribute the lane's existing height —
+    for(let x=xa;x<xb;x++){ const tSec=(x-x0)/z;                      // no change to lane height itself, just how
       if(tSec<0||tSec>=dur) continue;                                  // past the song's actual end: nothing to draw, not squished
       const frac=tSec/dur, v=analysis.energy[Math.min(n-1,Math.max(0,Math.floor(frac*n)))]||0;
-      tlg.fillStyle=`hsl(${210-v*210},85%,${20+v*34}%)`; tlg.fillRect(x,y,1.6,hh); }
-    if(analysis.accents){                                            // musical hits: aim your shells here
-      tlg.fillStyle='rgba(255,255,255,0.55)';
-      for(const a of analysis.accents){ if(a.t>=dur) continue; const ax=x0+a.t*z;   // same fixed zoom-based position
-        if(ax>=xa && ax<=xb) tlg.fillRect(ax,y,1,Math.max(2,hh*0.28*a.s)); }
+      tlg.fillStyle=`hsl(${210-v*210},85%,${20+v*34}%)`; tlg.fillRect(x,y,1.6,barH); }
+    const ticks=getBeatTicks();
+    if(ticks){
+      tlg.fillStyle='rgba(120,130,145,0.55)';                          // dynamics: rate of energy change, not beats —
+      for(const dt of ticks.dynamicsTicks){ if(dt.t>=dur) continue;    // tall where the music is swelling or dropping,
+        const dx=x0+dt.t*z; if(dx<xa-1||dx>xb+1) continue;             // flat where it's holding steady
+        tlg.fillRect(dx,tickY+tickBandH-Math.max(1,tickBandH*0.65*dt.d),1,Math.max(1,tickBandH*0.65*dt.d)); }
+      tlg.fillStyle='rgba(255,179,71,0.9)';                            // required beats: exactly what the scorer checks —
+      for(const a of ticks.required){ if(a.t>=dur) continue;           // aim bursts here for accent-sync credit
+        const ax=x0+a.t*z; if(ax<xa-1||ax>xb+1) continue;
+        tlg.fillRect(ax,tickY,1.4,Math.max(2,tickBandH*(0.5+0.5*a.s))); }
     }
   } else {
     const c=(e.color&&COLORS[e.color])||[170,175,190], multi=(e.color==='multi');
@@ -2565,6 +2572,72 @@ function avgNonNull(arr){ const v=arr.filter(x=>x!=null); return v.length? v.red
 /* graded proximity: full credit up to FULL, tapers linearly to 0 by FULL+FADE — replaces a hard
    cliff where landing at 0.19s counts fully and 0.21s counts for nothing. */
 function proximity(d,FULL,FADE){ if(d<=FULL) return 1; if(d>=FULL+FADE) return 0; return 1-(d-FULL)/FADE; }
+/* Which musical accents actually need to be hit for full recall credit. Raw onset detection on a
+   fast song can find several hits per second -- far more than any reasonable show could or should
+   match. Real music-sync systems solve this with "downbeat tracking": reduce a dense stream of
+   onsets to the musically meaningful ones, relative to the song's OWN tempo, rather than expecting
+   every single detected hit to matter. This does the same with a simple, tempo-adaptive heuristic
+   instead of full BPM/meter estimation -- deliberately, since a rigid tempo grid fights against
+   expressive, non-metronomic music (most of this app's own preset library is classical), while a
+   local, data-driven window adapts naturally even if the tempo itself drifts through the piece.
+     1. Estimate typical spacing from the accents themselves (median gap) -- no BPM detection needed.
+     2. Non-max suppression: within a window sized to that spacing (~4 beats), keep only the single
+        loudest accent -- collapsing a dense flurry down to roughly one "downbeat" per measure.
+     3. Apply the existing top-fraction importance filter on that already-thinned list.
+     4. Cap by a realistic sustained firing cadence, regardless of how the above worked out --
+        a hard ceiling so a very fast track can never demand more than a show could reasonably fire. */
+function computeRequiredAccents(rawAccents, eAt, songDuration){
+  const weighted=(rawAccents||[]).map(a=>({t:a.t, s:a.s, w:a.s*eAt(a.t)}));
+  if(weighted.length<2) return {required:weighted.slice(), thinned:weighted.slice()};
+
+  const gaps=[]; for(let i=1;i<weighted.length;i++) gaps.push(weighted[i].t-weighted[i-1].t);
+  gaps.sort((a,b)=>a-b);
+  const medianGap=gaps[Math.floor(gaps.length/2)]||0.5;
+  const windowSize=Math.max(0.5, medianGap*4);          // ~4 beats -- roughly one measure at a steady tempo
+
+  const thinned=[]; let windowStart=weighted[0].t, windowBest=weighted[0];
+  for(let i=1;i<weighted.length;i++){ const a=weighted[i];
+    if(a.t-windowStart>windowSize){ thinned.push(windowBest); windowStart=a.t; windowBest=a; }
+    else if(a.w>windowBest.w) windowBest=a; }
+  thinned.push(windowBest);
+
+  const STRONG_FRACTION=0.35, MIN_GAP_SEC=2.5;           // never require a hit more often than every 2.5s
+  const ranked=[...thinned].sort((a,b)=>b.w-a.w);
+  const byFraction=Math.max(6, Math.round(thinned.length*STRONG_FRACTION));
+  const byCadence=Math.max(6, Math.ceil(songDuration/MIN_GAP_SEC));
+  const topN=Math.min(byFraction, byCadence);
+  const requiredSet=new Set(ranked.slice(0,topN));
+  const required=thinned.filter(a=>requiredSet.has(a)).sort((a,b)=>a.t-b.t);
+  return {required, thinned};
+}
+/* Timeline display ticks: the amber set is exactly what computeRequiredAccents scores against, so
+   the ticks you see while placing shells are the same ones your score is measured on. The gray set
+   is a different thing entirely -- not beats at all, but a visual for "dynamics": how fast the
+   music's energy is rising or falling at each point, sampled at a fixed interval (not scored
+   against, just a guide). Cached on the analysis object itself, since it involves a sort over
+   potentially thousands of accents and would otherwise redo that work on every single drawn frame
+   during scroll/pan -- naturally invalidated whenever a new song loads, since that always creates a
+   fresh analysis object without this property yet. */
+function getBeatTicks(){
+  if(!analysis) return null;
+  if(analysis._beatTicks) return analysis._beatTicks;
+  const fs=analysis.frameSec, N=analysis.energy.length, dur=analysis.duration||N*fs;
+  const eAt=t=>analysis.energy[Math.max(0,Math.min(N-1,Math.floor(t/fs)))]||0;
+  const rawAccents=(analysis.accents||[]).filter(a=>a.t<dur);
+  const {required}=computeRequiredAccents(rawAccents,eAt,dur);
+
+  const DERIV_STEP=1.5, DERIV_LOOKAHEAD=1.5;             // sampled, not per-frame -- a guide, not a precise score input
+  const dynamicsTicks=[];
+  for(let t=0; t<dur; t+=DERIV_STEP){
+    const d=Math.abs(eAt(Math.min(dur,t+DERIV_LOOKAHEAD))-eAt(t));
+    dynamicsTicks.push({t, d});
+  }
+  const dmax=Math.max(1e-6, ...dynamicsTicks.map(x=>x.d));
+  dynamicsTicks.forEach(x=>x.d=x.d/dmax);                // normalized 0..1, so the tallest swing in the song maxes out
+
+  analysis._beatTicks={required, dynamicsTicks};
+  return analysis._beatTicks;
+}
 /* the shared gentle curve applied to every raw dimension score before combining them */
 function curve(x,p){ return Math.pow(Math.max(0,Math.min(1,x)),p); }
 /* total = best-scoring SUBSET of the five curved dimensions, capped by how much of the show's
@@ -2615,21 +2688,30 @@ function scoreShow(){
   const half=Math.max(1,Math.round(1.5/fs));
   const showEnv=smoothArr(Array.from(inten),half);
   const musEnv=analysis.energy;
+  /* Centroid of the top decile, so a long loud plateau doesn't snap to its first frame. Computed
+     early (not just in the climax section below) because the accent climax-bonus, right after the
+     matching loop, needs to know where the music's own big moment actually is. */
+  const peakTime=a=>{ const mx=Math.max(...a); if(mx<1e-9) return 0;
+    let num=0,den=0;
+    for(let i=0;i<a.length;i++) if(a[i]>=mx*0.9){ num+=i*a[i]; den+=a[i]; }
+    return den? (num/den)*fs : 0; };
+  const musPeakTime=peakTime(musEnv);
 
   /* --- 1. accent sync: precision + recall against detected onsets, via 1-to-1 matching ---
-     Accents are weighted by how loud the music is there: you shouldn't be scored
-     for "missing" a beat during a quiet passage. Only the hits that matter count.
-     Landing near a beat tapers smoothly rather than a hard cutoff, and — critically — each
-     burst can only be matched to ONE accent and vice versa. Without that, a single burst near
-     several closely-packed beats (or several bursts near one beat) could each independently
-     claim full credit, inflating the score in busy passages regardless of real placement quality. */
+     Recall is measured against a musically-thinned "required" subset (see computeRequiredAccents),
+     not raw onset density -- a fast song can have several onsets a second, far more than any show
+     could reasonably match. Landing near a beat tapers smoothly rather than a hard cutoff, and —
+     critically — each burst can only be matched to ONE accent and vice versa. Without that, a
+     single burst near several closely-packed beats (or several bursts near one beat) could each
+     independently claim full credit, inflating the score in busy passages regardless of real
+     placement quality. */
   const FULL=0.20, FADE=0.45, LAUNCH_CREDIT=0.67;
   const eAt=t=>analysis.energy[Math.max(0,Math.min(N-1,Math.floor(t/fs)))]||0;
-  const accents=(analysis.accents||[]).filter(a=>a.t<N*fs)
-    .map(a=>({t:a.t, s:a.s, w:a.s*eAt(a.t)}));          // importance = onset strength x loudness
-  const ranked=[...accents].sort((a,b)=>b.w-a.w);
-  const strongSet=new Set(ranked.slice(0, Math.max(6, Math.round(accents.length*0.35))));  // the hits that matter
-  const strongIdx=[]; accents.forEach((a,i)=>{ if(strongSet.has(a)) strongIdx.push(i); });
+  const rawAccents=(analysis.accents||[]).filter(a=>a.t<N*fs);
+  const {required:requiredAccents, thinned:thinnedAccents}=computeRequiredAccents(rawAccents,eAt,N*fs);
+  const accents=rawAccents.map(a=>({t:a.t, s:a.s, w:a.s*eAt(a.t)}));   // full list -- still matchable for precision,
+  const requiredTs=new Set(requiredAccents.map(a=>a.t));               // just not all "required" for recall
+  const strongIdx=[]; accents.forEach((a,i)=>{ if(requiredTs.has(a.t)) strongIdx.push(i); });
 
   const candidates=[];
   for(let bi=0; bi<bursts.length; bi++){
@@ -2655,6 +2737,24 @@ function scoreShow(){
   if(strongIdx.length) recall=strongIdx.reduce((a,i)=>a+accentCredit[i],0)/strongIdx.length;
   const f1=(precision+recall)>0?2*precision*recall/(precision+recall):0;
 
+  /* Climax bonus: the required set above is deliberately trimmed to a realistic minimum, but a
+     genuinely great show often goes further right where it counts, firing on beats beyond that
+     minimum during the song's big moment. That extra effort wasn't rewarded before; this adds
+     credit for it on top of the base score (never instead of), capped so it can't dominate the
+     number. Eligible accents are the "next tier" — musically real (survived the tempo-thinning)
+     but not part of the required set, and within the climax window. */
+  const CLIMAX_BONUS_WINDOW=20, CLIMAX_BONUS_CAP=0.12;
+  const bonusEligibleTs=new Set(thinnedAccents
+    .filter(a=>!requiredTs.has(a.t) && Math.abs(a.t-musPeakTime)<=CLIMAX_BONUS_WINDOW)
+    .map(a=>a.t));
+  let climaxBonus=0;
+  if(bonusEligibleTs.size){
+    let hit=0;
+    accents.forEach((a,i)=>{ if(bonusEligibleTs.has(a.t)) hit+=accentCredit[i]; });
+    climaxBonus=Math.min(CLIMAX_BONUS_CAP,(hit/bonusEligibleTs.size)*CLIMAX_BONUS_CAP);
+  }
+  const accentScore=Math.min(1, f1+climaxBonus);
+
   /* --- 2. energy tracking --- */
   const r=pearson(showEnv,musEnv);
   const track=Math.max(0,r);                            // negative correlation = fighting the music
@@ -2668,12 +2768,7 @@ function scoreShow(){
   const cvShow=cv(showEnv), cvMus=cv(musEnv);
   const dynamics = (cvShow<1e-6||cvMus<1e-6) ? 0
     : Math.min(cvShow,cvMus)/Math.max(cvShow,cvMus);
-  /* Climax: centroid of the top decile, so a long loud plateau doesn't snap to its first frame. */
-  const peakTime=a=>{ const mx=Math.max(...a); if(mx<1e-9) return 0;
-    let num=0,den=0;
-    for(let i=0;i<a.length;i++) if(a[i]>=mx*0.9){ num+=i*a[i]; den+=a[i]; }
-    return den? (num/den)*fs : 0; };
-  const climaxGap=Math.abs(peakTime(showEnv)-peakTime(musEnv));
+  const climaxGap=Math.abs(peakTime(showEnv)-musPeakTime);
   const climax=Math.max(0,1-climaxGap/40);              // within 40s of the music's peak — climaxes can be broad, sustained passages
 
   /* --- 4. variety: rewards actually using the app's palette, not one repeated recipe ---
@@ -2733,7 +2828,7 @@ function scoreShow(){
   }
 
   const WEIGHTS={accent:0.30, track:0.26, dynamics:0.11, climax:0.08, variety:0.25};
-  const raw={accent:f1, track, dynamics, climax, variety};
+  const raw={accent:accentScore, track, dynamics, climax, variety};
   const curved={}; for(const k in raw) curved[k]=curve(raw[k],0.85);
   const capOfCoverage=w=>100*Math.pow(w,0.7);
   const tiered=tieredTotal(curved,WEIGHTS,capOfCoverage);
@@ -2742,7 +2837,7 @@ function scoreShow(){
   /* --- actionable notes --- */
   const tips=[];
   const nearest=(t,list)=>list.reduce((best,x)=>{const d=Math.abs((x.t!==undefined?x.t:x)-t);return d<best?d:best;},Infinity);
-  const missed=[...strongSet].filter(a=>nearest(a.t,bursts)>FULL+FADE).sort((a,b)=>b.s-a.s).slice(0,3);
+  const missed=[...requiredAccents].filter(a=>nearest(a.t,bursts)>FULL+FADE).sort((a,b)=>b.s-a.s).slice(0,3);
   if(recall<0.6 && missed.length)
     tips.push(`Big hits with no firework: ${missed.map(a=>fmtClock(a.t+t0)).join(', ')}`);
   if(precision<0.5 && bursts.length)
@@ -2769,9 +2864,9 @@ function scoreShow(){
   if(!tips.length) tips.push('Nicely matched — bursts land on the hits, the density follows the music, and the show uses real variety.');
 
   const verdict = total>=80?'Tightly synced' : total>=65?'Good match' : total>=45?'Loosely synced' : 'Out of step';
-  return {total,verdict,f1,precision,recall,track,dynamics,climax,variety,
+  return {total,verdict,f1:accentScore,climaxBonus,precision,recall,track,dynamics,climax,variety,
           axisKind,axisType,axisRTP,axisColorPos,subset:tiered.subset,coverage:tiered.coverage,
-          nBursts:bursts.length,nAccents:accents.length,launchOnlyCount,offScreenCount,tips};
+          nBursts:bursts.length,nAccents:requiredAccents.length,launchOnlyCount,offScreenCount,tips};
 }
 /* ---- sync score UI ---- */
 const scoreOverlay=document.getElementById('scoreOverlay'), scoreDlg=document.getElementById('scoreDlg');
@@ -2806,7 +2901,7 @@ tlScoreBtn.onclick=()=>{
     const tips=document.createElement('div'); tips.className='stips';
     const c=document.createElement('div'); c.className='smlabel';
     const c1=document.createElement('span'); c1.textContent=s.nBursts+' bursts';
-    const c2=document.createElement('span'); c2.textContent=s.nAccents+' musical accents';
+    const c2=document.createElement('span'); c2.textContent=s.nAccents+' key accents';
     c.append(c1,c2); tips.appendChild(c);
     s.tips.forEach(t=>{ const d=document.createElement('div'); d.className='stip'; d.textContent=t; tips.appendChild(d); });
     body.appendChild(tips);
