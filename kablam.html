@@ -1543,7 +1543,7 @@ audioFile.onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
 };
 
 const hintEl=document.getElementById('hint'); let hintHidden=false;
-const BUILD_NUM=79;   // bump this with each new build — shown as a small tag under the opening banner
+const BUILD_NUM=80;   // bump this with each new build — shown as a small tag under the opening banner
 document.getElementById('buildTag').textContent='Build '+BUILD_NUM;
 function hideHint(){ if(!hintHidden){ hintHidden=true; hintEl.classList.add('hide');
   const wm=document.getElementById('wordmark'); if(wm) wm.classList.add('hide');
@@ -1729,7 +1729,7 @@ document.getElementById('bUse').onclick=()=>{
   customShell=cfg; curShell='custom'; customOpt.hidden=false; shellSel.value='custom';
   openBuilder.classList.add('on'); syncSliders(); builderOverlay.classList.remove('on'); };
 builderOverlay.addEventListener('pointerdown',e=>{ if(e.target===builderOverlay) builderOverlay.classList.remove('on'); });
-window.addEventListener('resize',()=>{ if(builderOverlay.classList.contains('on')){ fitBuilderCanvas(); drawBuilder(); } });
+function onResizeBuilder(){ if(builderOverlay.classList.contains('on')){ fitBuilderCanvas(); drawBuilder(); } }
 
 /* ---------------- rapid fire ---------------- */
 const RAPID_SHELLS=['peony','chrys','star','heart','willow','palm','ring'];
@@ -1791,7 +1791,7 @@ function handleViewportChange(){
   requestAnimationFrame(()=>requestAnimationFrame(refreshDockRestoreVisibility));
   setTimeout(refreshDockRestoreVisibility,350);
 }
-window.addEventListener('resize',handleViewportChange);
+/* handleViewportChange is invoked from the single consolidated resize handler at the end of the script */
 // click, not pointerdown: acting on pointerdown moves the whole dock BEFORE the finger/mouse lifts,
 // so the release half of the tap lands on whatever button the shifted layout put under it instead —
 // exactly the "taps hit the rightmost button" bug. click only fires once, after a full press-and-
@@ -1885,6 +1885,52 @@ function updateLenVisibility(){
     tlLenLbl.style.display='none'; tlLenEl.style.display='none';
   }
 }
+let _songBarCache=null;   // {canvas, zoom, hh, analysis} -- rebuilt only when zoom/height/song changes, not per frame
+const SONGBAR_MAX_W=16384;   // safely under every browser's max canvas dimension; above this we draw directly instead
+function getSongBarCache(hh){
+  if(!analysis) return null;
+  const z=timeline.zoom, dur=analysis.duration||1;
+  const fullW=Math.max(1, Math.ceil(dur*z));
+  if(fullW>SONGBAR_MAX_W) return null;                               // too wide to cache safely -- caller draws directly
+  if(_songBarCache && _songBarCache.zoom===z && _songBarCache.hh===hh && _songBarCache.analysis===analysis)
+    return _songBarCache.canvas;                                     // still valid -- reuse it
+  const cv=document.createElement('canvas'); cv.width=fullW; cv.height=hh;
+  const g=cv.getContext('2d');
+  drawSongBarInto(g, 0, hh, z, dur);                                 // shared drawing, into cache-local coords
+  _songBarCache={canvas:cv, zoom:z, hh, analysis};
+  return cv;
+}
+/* The actual song-bar drawing -- gradient + dynamics triangles + beat ticks -- into a context at a
+   given x-origin. Used both to fill the offscreen cache (origin 0) and, when a song is too wide to
+   cache at the current zoom, to draw straight onto the timeline (origin = the event's screen x). */
+function drawSongBarInto(g, originX, hh, z, dur){
+  const n=analysis.energy.length;
+  const dynH=5, barTop=dynH+1, barH=5, tickTop=dynH+1+barH+1, tickBase=hh;
+  const visW=g.canvas.width;
+  for(let px=Math.max(0,Math.ceil(originX)); px<visW; px++){         // canvas pixel columns; time = distance from origin
+    const tSec=(px-originX)/z; if(tSec<0) continue; if(tSec>=dur) break;
+    const frac=tSec/dur, v=analysis.energy[Math.min(n-1,Math.max(0,Math.floor(frac*n)))]||0;
+    g.fillStyle=`hsl(${210-v*210},85%,${20+v*34}%)`; g.fillRect(px,barTop,1.6,barH); }
+  const ticks=getBeatTicks(); if(!ticks) return;
+  const tickW=Math.max(1,Math.min(3.2,z/45));
+  g.fillStyle='rgba(150,185,220,0.85)';
+  for(const s of ticks.dynamicsSegs){ if(s.t1<0||s.t0>=dur) continue;
+    const sx0=originX+s.t0*z, sx1=originX+s.t1*z, th=Math.max(2,dynH*s.magNorm);
+    g.beginPath();
+    if(s.rising){ g.moveTo(sx0,0); g.lineTo(sx1,0); g.lineTo(sx1,th); }
+    else { g.moveTo(sx1,0); g.lineTo(sx0,0); g.lineTo(sx0,th); }
+    g.closePath(); g.fill(); }
+  const tickRegionH=tickBase-tickTop;
+  for(const a of ticks.thinned){ if(a.t>=dur) continue; const ax=originX+a.t*z;
+    if(ticks.requiredTs.has(a.t)){
+      const rh=Math.max(3,tickRegionH*(0.5+0.5*a.s));
+      g.fillStyle='rgba(255,190,90,0.95)'; g.fillRect(ax,tickBase-rh,1.8*tickW,rh);
+    } else {
+      const sh=Math.max(1.5,tickRegionH*0.4);
+      g.fillStyle='rgba(255,179,71,0.55)'; g.fillRect(ax,tickBase-sh,1.4*tickW,sh);
+    }
+  }
+}
 function drawEvent(e,off,voff,w,vh){
   const z=timeline.zoom, t1=(e.t1==null?e.t0+0.6:e.t1);
   let x0=e.t0*z-off, x1=t1*z-off;
@@ -1892,39 +1938,17 @@ function drawEvent(e,off,voff,w,vh){
   const y=TL_RULER_H+e.lane*TL_LANE_H+3-voff, hh=TL_LANE_H-6, wid=Math.max(TL_ICON+4,x1-x0);
   if(y+hh<=TL_RULER_H || y>=vh) return;               // scrolled under the ruler or past the bottom
   if(e.kind==='song' && analysis){                                   // energy-colored song bar + beat/dynamics ticks
-    const n=analysis.energy.length, dur=analysis.duration||1, xa=Math.max(0,x0), xb=Math.min(w,x0+wid);
-    const dynH=5, barTop=y+dynH+1, barH=5, tickTop=barTop+barH+1, tickBase=y+hh;   // three clearly separate
-    for(let x=xa;x<xb;x++){ const tSec=(x-x0)/z;                       // strips now: dynamics (top), the bar
-      if(tSec<0||tSec>=dur) continue;                                  // (middle), beat ticks (bottom) -- ticks no
-      const frac=tSec/dur, v=analysis.energy[Math.min(n-1,Math.max(0,Math.floor(frac*n)))]||0;   // longer reach into the bar at all
-      tlg.fillStyle=`hsl(${210-v*210},85%,${20+v*34}%)`; tlg.fillRect(x,barTop,1.6,barH); }
-    const ticks=getBeatTicks();
-    if(ticks){
-      const tickW=Math.max(1,Math.min(3.2,z/45));           // 1x at low/default zoom, widening as you zoom in
-      tlg.save(); tlg.beginPath(); tlg.rect(xa,y,Math.max(0,xb-xa),hh); tlg.clip();   // a wide triangle must stay
-      tlg.fillStyle='rgba(150,185,220,0.85)';                // within this event's own box, same as everything else here
-      for(const s of ticks.dynamicsSegs){ if(s.t1<0||s.t0>=dur) continue;   // direction-aware: width = duration of the
-        const sx0=x0+s.t0*z, sx1=x0+s.t1*z;                  // swell/drop, height = magnitude, base (tall edge) sits on
-        if(sx1<xa-2||sx0>xb+2) continue;                     // whichever side has more energy, tapering to a point
-        const th=Math.max(2,dynH*s.magNorm);                 // on the lower-energy side -- anchored at the TOP now,
-        tlg.beginPath();                                     // growing down into its own strip, above the bar
-        if(s.rising){ tlg.moveTo(sx0,y); tlg.lineTo(sx1,y); tlg.lineTo(sx1,y+th); }
-        else { tlg.moveTo(sx1,y); tlg.lineTo(sx0,y); tlg.lineTo(sx0,y+th); }
-        tlg.closePath(); tlg.fill(); }
+    const dur=analysis.duration||1;
+    const cache=getSongBarCache(hh);                                 // full-width offscreen render, keyed on zoom+height
+    if(cache){                                                        // blit just the visible slice -- no per-frame pixel work
+      const srcX=Math.max(0, -x0), destX=Math.max(x0,0);             // clamp to the visible window
+      const srcW=Math.min(cache.width-srcX, w-destX, x0+cache.width-destX);
+      if(srcW>0) tlg.drawImage(cache, srcX,0, srcW,hh, destX,y, srcW,hh);
+    } else {                                                          // too wide to cache at this zoom -- draw directly,
+      tlg.save(); tlg.translate(0,y);                                 // clipped to the visible window so we don't waste
+      tlg.beginPath(); tlg.rect(Math.max(0,x0),0,w,hh); tlg.clip();   // work off-screen
+      drawSongBarInto(tlg, x0, hh, timeline.zoom, dur);
       tlg.restore();
-      const tickRegionH=tickBase-tickTop;                    // both tiers now confined to their own strip below the bar
-      for(const a of ticks.thinned){ if(a.t>=dur) continue;            // the full steady beat grid — every tempo-
-        const ax=x0+a.t*z; if(ax<xa-1||ax>xb+1) continue;              // thinned beat, not just the required ones
-        if(ticks.requiredTs.has(a.t)){                                 // required: what the scorer actually checks —
-          const rh=Math.max(3,tickRegionH*(0.5+0.5*a.s));
-          tlg.fillStyle='rgba(255,190,90,0.95)';                       // bright, tallest within the strip
-          tlg.fillRect(ax,tickBase-rh,1.8*tickW,rh);
-        } else {                                                       // medium importance: amber, modestly bigger than
-          const sh=Math.max(1.5,tickRegionH*0.4);                      // before, but clearly shorter than required —
-          tlg.fillStyle='rgba(255,179,71,0.55)';                       // still just below the timeline, same strip
-          tlg.fillRect(ax,tickBase-sh,1.4*tickW,sh);
-        }
-      }
     }
   } else {
     const c=(e.color&&COLORS[e.color])||[170,175,190], multi=(e.color==='multi');
@@ -3076,7 +3100,7 @@ function autoSongEvent(){
   timeline.zoom=Math.max(3,(window.innerWidth-40)/songSpan);   // separate from the scroll-out clamp below
   tlOpen();
 }
-window.addEventListener('resize',()=>{ if(!tlPanel.classList.contains('collapsed')){ tlResize(); tlDraw(); } });
+function onResizeTimeline(){ if(!tlPanel.classList.contains('collapsed')){ tlResize(); tlDraw(); } }
 relayout();
 
 /* ---------------- mobile UI ---------------- */
@@ -3095,7 +3119,7 @@ function applyLayout(){
   if(isNarrow()){ const cur=document.querySelector('.tab.on'); setTab(cur?cur.dataset.tab:'shell'); }
   else document.querySelectorAll('.tp').forEach(p=>p.classList.add('on'));   // desktop: show every panel inline
 }
-window.addEventListener('resize',applyLayout);
+/* applyLayout is invoked from the single consolidated resize handler at the end of the script */
 applyLayout();
 if(isNarrow()) tlPanel.classList.add('collapsed');       // start with the sky, not the tools
 
@@ -3180,7 +3204,19 @@ installBtn.onclick=async()=>{ if(!deferredPrompt) return; deferredPrompt.prompt(
   await deferredPrompt.userChoice; deferredPrompt=null; installBtn.hidden=true; };
 window.addEventListener('appinstalled',()=>{ installBtn.hidden=true; deferredPrompt=null; });
 
-window.addEventListener('resize',resize); resize(); requestAnimationFrame(frame);
+/* One resize handler, deliberate order. applyLayout can change which panels are visible (CSS), which
+   changes the box sizes the canvas resizers measure -- so it MUST run before them. Previously these
+   were five separate listeners firing in registration order, which was accidental and had already
+   produced resize-during-X bugs (the position pad, the length-label overflow). */
+function onResize(){
+  applyLayout();            // 1. settle the CSS layout first -- affects everyone's measured dimensions
+  handleViewportChange();   // 2. viewport-dependent recompute
+  resize();                 // 3. the sky canvas
+  onResizeTimeline();       // 4. the timeline canvas (no-op if collapsed)
+  onResizeBuilder();        // 5. the shell-builder overlay (no-op if closed)
+}
+window.addEventListener('resize',onResize);
+resize(); requestAnimationFrame(frame);
 </script>
 </body>
 </html>
